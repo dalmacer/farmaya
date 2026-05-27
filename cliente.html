@@ -1,0 +1,421 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>FarmaYa — Encontrá tu medicamento</title>
+<link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@300;400;500;600&family=Space+Mono:wght@400;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+<style>
+:root {
+  --green:#2D6A4F;--green-light:#52B788;--green-pale:#D8F3DC;
+  --amber:#E76F51;--amber-pale:#FDE8E2;
+  --text:#1B1B1B;--muted:#6B7280;
+  --surface:#F9FAF8;--white:#FFFFFF;--border:#E5E7EB;
+  --radius:14px;--mono:'Space Mono',monospace;--sans:'DM Sans',sans-serif;
+}
+*{box-sizing:border-box;margin:0;padding:0}
+body{font-family:var(--sans);background:var(--surface);color:var(--text);min-height:100vh}
+header{background:var(--green);padding:14px 20px 12px;display:flex;align-items:center;gap:10px;position:sticky;top:0;z-index:1000}
+.logo{font-family:var(--mono);color:#fff;font-size:18px;font-weight:700;letter-spacing:-0.5px}
+.logo span{color:#74C69D}
+.gps-pill{margin-left:auto;display:flex;align-items:center;gap:6px;background:rgba(255,255,255,0.15);border-radius:100px;padding:4px 10px;font-size:11px;color:#fff;cursor:pointer}
+.gps-dot{width:7px;height:7px;border-radius:50%;background:#74C69D;animation:pulse 2s infinite}
+@keyframes pulse{0%,100%{opacity:1}50%{opacity:0.4}}
+
+.tabs{display:flex;border-bottom:1px solid var(--border);background:var(--white);padding:0 20px}
+.tab{padding:12px 16px;font-size:13px;font-weight:500;color:var(--muted);cursor:pointer;border-bottom:2px solid transparent;transition:all 0.15s}
+.tab.active{color:var(--green);border-bottom-color:var(--green)}
+.tab-content{display:none}
+.tab-content.active{display:block}
+
+.search-section{padding:20px 20px 0}
+.search-label{font-size:11px;font-weight:600;color:var(--green);text-transform:uppercase;letter-spacing:0.08em;margin-bottom:8px}
+.search-box{display:flex;gap:8px;background:var(--white);border:1.5px solid var(--border);border-radius:var(--radius);padding:6px 6px 6px 14px;transition:border-color 0.2s}
+.search-box:focus-within{border-color:var(--green-light)}
+.search-box input{flex:1;border:none;outline:none;font-family:var(--sans);font-size:15px;color:var(--text);background:transparent}
+.search-box input::placeholder{color:#9CA3AF}
+.search-btn{background:var(--green);color:#fff;border:none;border-radius:10px;padding:8px 16px;font-family:var(--sans);font-size:13px;font-weight:600;cursor:pointer;white-space:nowrap;transition:background 0.15s,transform 0.1s}
+.search-btn:hover{background:var(--green-light)}
+.search-btn:active{transform:scale(0.97)}
+.chips{display:flex;flex-wrap:wrap;gap:6px;margin-top:10px}
+.chip{font-size:12px;padding:4px 12px;border-radius:100px;border:1px solid var(--border);background:var(--white);color:var(--muted);cursor:pointer;transition:all 0.15s}
+.chip:hover{border-color:var(--green-light);color:var(--green);background:var(--green-pale)}
+
+.status-bar{margin:14px 20px 0;background:var(--white);border:1px solid var(--border);border-radius:var(--radius);padding:10px 14px;display:flex;align-items:center;gap:10px;font-size:13px;color:var(--muted);min-height:44px}
+.status-bar.searching{border-color:var(--green-light);background:var(--green-pale);color:var(--green)}
+.status-bar.results{border-color:#B7E4C7;background:#F0FFF4;color:var(--green)}
+.status-bar.timeout{border-color:#FCD5C0;background:var(--amber-pale);color:var(--amber)}
+.spinner{width:16px;height:16px;border:2px solid var(--green-light);border-top-color:var(--green);border-radius:50%;animation:spin 0.7s linear infinite;flex-shrink:0}
+@keyframes spin{to{transform:rotate(360deg)}}
+.countdown{font-family:var(--mono);font-size:13px;font-weight:700;color:var(--green);margin-left:auto;flex-shrink:0}
+.countdown.urgent{color:var(--amber)}
+
+#map{margin:14px 20px 0;height:260px;border-radius:var(--radius);border:1px solid var(--border);overflow:hidden}
+
+.results-header{padding:16px 20px 8px;display:flex;align-items:baseline}
+.results-title{font-size:14px;font-weight:600;color:var(--text)}
+.results-count{font-family:var(--mono);font-size:11px;background:var(--green-pale);color:var(--green);padding:2px 8px;border-radius:100px;margin-left:8px}
+#results-list{padding:0 20px 20px;display:flex;flex-direction:column;gap:10px}
+
+.pharm-card{background:var(--white);border:1px solid var(--border);border-radius:var(--radius);padding:14px 16px;display:flex;flex-direction:column;gap:10px;animation:slideIn 0.3s ease forwards;opacity:0;transform:translateY(8px);cursor:pointer;transition:border-color 0.15s,box-shadow 0.15s}
+.pharm-card:hover{border-color:var(--green-light);box-shadow:0 2px 12px rgba(45,106,79,0.08)}
+@keyframes slideIn{to{opacity:1;transform:translateY(0)}}
+.pharm-card-top{display:flex;align-items:flex-start;gap:10px}
+.pharm-icon{width:38px;height:38px;border-radius:10px;background:var(--green-pale);display:flex;align-items:center;justify-content:center;flex-shrink:0;font-size:18px}
+.pharm-info{flex:1;min-width:0}
+.pharm-name{font-size:14px;font-weight:600;color:var(--text);margin-bottom:2px}
+.pharm-addr{font-size:12px;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.pharm-dist-badge{font-family:var(--mono);font-size:11px;font-weight:700;background:#F3F4F6;color:var(--muted);padding:3px 8px;border-radius:6px;flex-shrink:0}
+.pharm-meta{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+.stock-badge{font-size:11px;font-weight:600;padding:3px 10px;border-radius:100px;display:flex;align-items:center;gap:4px}
+.stock-ok{background:var(--green-pale);color:var(--green)}
+.resp-time{font-family:var(--mono);font-size:10px;color:#9CA3AF;margin-left:auto}
+.wa-btn{display:flex;align-items:center;justify-content:center;gap:8px;background:#25D366;color:#fff;border:none;border-radius:10px;padding:10px 16px;font-family:var(--sans);font-size:13px;font-weight:600;cursor:pointer;width:100%;transition:background 0.15s,transform 0.1s}
+.wa-btn:hover{background:#1ebe5d}
+.wa-btn:active{transform:scale(0.98)}
+
+/* HISTORIAL CLIENTE */
+.hist-section{padding:16px 20px 100px}
+.hist-toolbar{display:flex;gap:8px;margin-bottom:12px;flex-wrap:wrap;align-items:center}
+.hist-count{font-size:12px;color:var(--muted);margin-right:auto}
+.hist-btn{display:flex;align-items:center;gap:6px;padding:7px 14px;border-radius:100px;font-size:12px;font-weight:600;cursor:pointer;border:1px solid var(--border);background:var(--white);color:var(--text);transition:all 0.15s}
+.hist-btn.excel{border-color:#16A34A;color:#16A34A}
+.hist-btn.excel:hover{background:#F0FFF4}
+.hist-btn.pdf{border-color:#DC2626;color:#DC2626}
+.hist-btn.pdf:hover{background:#FEF2F2}
+.hist-btn:disabled{opacity:0.4;cursor:not-allowed}
+.hist-row{background:var(--white);border:1px solid var(--border);border-radius:10px;padding:12px 14px;margin-bottom:8px}
+.hist-row-top{display:flex;align-items:center;gap:10px;font-size:13px}
+.hist-med{font-weight:500;flex:1}
+.hist-tag{font-size:11px;padding:2px 8px;border-radius:100px;font-weight:600}
+.hist-ok{background:var(--green-pale);color:var(--green)}
+.hist-none{background:#F3F4F6;color:var(--muted)}
+.hist-time{font-family:var(--mono);font-size:11px;color:var(--muted)}
+.hist-cb{width:16px;height:16px;cursor:pointer;accent-color:var(--green)}
+.hist-farmacias{margin-top:8px;padding-top:8px;border-top:1px solid var(--border);font-size:12px;color:var(--muted)}
+.hist-farmacia-item{display:flex;justify-content:space-between;align-items:center;padding:4px 0}
+
+.delete-bar{position:fixed;bottom:0;left:0;right:0;background:#DC2626;color:#fff;padding:14px 20px;display:flex;align-items:center;justify-content:space-between;font-size:13px;font-weight:600;transform:translateY(100%);transition:transform 0.3s;z-index:200}
+.delete-bar.show{transform:translateY(0)}
+.delete-bar button{background:rgba(255,255,255,0.2);border:none;color:#fff;padding:8px 16px;border-radius:100px;font-size:12px;font-weight:700;cursor:pointer}
+
+.empty-state{text-align:center;padding:40px 20px;color:var(--muted);font-size:14px;line-height:1.6}
+.empty-icon{font-size:40px;margin-bottom:12px}
+.toast{position:fixed;bottom:20px;left:50%;transform:translateX(-50%) translateY(80px);background:var(--green);color:#fff;padding:10px 20px;border-radius:100px;font-size:13px;font-weight:600;transition:transform 0.3s;z-index:9999;white-space:nowrap}
+.toast.show{transform:translateX(-50%) translateY(0)}
+</style>
+</head>
+<body>
+
+<header>
+  <div class="logo">Farma<span>Ya</span></div>
+  <div class="gps-pill" id="gps-status" onclick="getLocation()">
+    <div class="gps-dot"></div>
+    <span id="gps-text">Localizando...</span>
+  </div>
+</header>
+
+<div class="tabs">
+  <div class="tab active" onclick="switchTab('buscar')">Buscar</div>
+  <div class="tab" onclick="switchTab('historial')">Mis búsquedas</div>
+</div>
+
+<!-- TAB BUSCAR -->
+<div class="tab-content active" id="tab-buscar">
+  <div class="search-section">
+    <div class="search-label">¿Qué medicamento necesitás?</div>
+    <div class="search-box">
+      <input id="med-input" type="text" placeholder="ej: ibuprofeno, amoxicilina..." autocomplete="off"/>
+      <button class="search-btn" onclick="startSearch()">Consultar</button>
+    </div>
+    <div class="chips">
+      <span class="chip" onclick="quickSearch('Ibuprofeno 400mg')">Ibuprofeno</span>
+      <span class="chip" onclick="quickSearch('Paracetamol 500mg')">Paracetamol</span>
+      <span class="chip" onclick="quickSearch('Amoxicilina')">Amoxicilina</span>
+      <span class="chip" onclick="quickSearch('Omeprazol')">Omeprazol</span>
+      <span class="chip" onclick="quickSearch('Losartán')">Losartán</span>
+      <span class="chip" onclick="quickSearch('Dexametasona')">Dexametasona</span>
+    </div>
+  </div>
+  <div class="status-bar" id="status-bar"><span>📍 Esperando ubicación GPS...</span></div>
+  <div id="map"></div>
+  <div id="results-section" style="display:none">
+    <div class="results-header">
+      <span class="results-title">Farmacias con stock</span>
+      <span class="results-count" id="results-count">0</span>
+    </div>
+    <div id="results-list"></div>
+  </div>
+  <div id="empty-state" class="empty-state" style="display:none">
+    <div class="empty-icon">🔍</div>
+    <div>Ninguna farmacia confirmó stock.<br><br>
+    <button class="search-btn" onclick="startSearch()" style="margin:auto;display:inline-block">Reintentar</button></div>
+  </div>
+</div>
+
+<!-- TAB HISTORIAL -->
+<div class="tab-content" id="tab-historial">
+  <div class="hist-section">
+    <div class="hist-toolbar" style="margin-top:0">
+      <span class="hist-count" id="hist-count-cli">0 búsquedas</span>
+      <button class="hist-btn excel" onclick="exportExcel()">⬇ Excel</button>
+      <button class="hist-btn pdf" onclick="exportPDF()">⬇ PDF</button>
+      <button class="hist-btn" id="btn-delete-cli" onclick="toggleDeleteMode()" style="border-color:#DC2626;color:#DC2626" disabled>🗑 Borrar</button>
+    </div>
+    <div id="hist-list-cli"><div style="text-align:center;padding:30px;color:var(--muted);font-size:13px">Tus búsquedas aparecerán acá.</div></div>
+  </div>
+</div>
+
+<div class="delete-bar" id="delete-bar">
+  <span id="delete-count">0 seleccionados</span>
+  <div style="display:flex;gap:8px">
+    <button onclick="cancelDelete()">Cancelar</button>
+    <button onclick="confirmDelete()" style="background:rgba(255,255,255,0.9);color:#DC2626">Confirmar borrado</button>
+  </div>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script>
+const BACKEND_URL = 'http://localhost:3000';
+const SESSION_ID  = Math.random().toString(36).slice(2,10).toUpperCase();
+const TIMEOUT_MS  = 10 * 60 * 1000;
+const MAX_ANTES_BORRAR = 10;
+
+let map, userMarker, pharmMarkers = [];
+let userLat = null, userLng = null;
+let currentMed = '';
+let searchActive = false;
+let countdownInterval = null, pollInterval = null;
+let searchEndTime = null;
+let responses = [];
+let searchHistory = [];
+let deleteMode = false;
+
+// ── TABS ──────────────────────────────────────────────────────
+function switchTab(tab) {
+  document.querySelectorAll('.tab').forEach((t,i)=>t.classList.toggle('active',['buscar','historial'][i]===tab));
+  document.querySelectorAll('.tab-content').forEach(t=>t.classList.remove('active'));
+  document.getElementById('tab-'+tab).classList.add('active');
+  if(tab==='historial') renderHistoryCli();
+}
+
+// ── GPS ───────────────────────────────────────────────────────
+function initMap(){
+  map=L.map('map',{zoomControl:true,attributionControl:false});
+  L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png').addTo(map);
+  map.setView([-38.0055,-57.5426],14);
+}
+
+function getLocation(){
+  if(!navigator.geolocation){setGpsStatus('No soportado',false);return;}
+  setGpsStatus('Localizando...',true);
+  navigator.geolocation.getCurrentPosition(
+    pos=>{
+      userLat=pos.coords.latitude; userLng=pos.coords.longitude;
+      setGpsStatus('GPS activo',true);
+      map.setView([userLat,userLng],15);
+      if(userMarker)map.removeLayer(userMarker);
+      const icon=L.divIcon({html:`<div style="width:14px;height:14px;background:#2D6A4F;border:3px solid white;border-radius:50%;box-shadow:0 0 0 4px rgba(45,106,79,0.25)"></div>`,className:'',iconSize:[14,14],iconAnchor:[7,7]});
+      userMarker=L.marker([userLat,userLng],{icon}).addTo(map).bindPopup('<b>Tu ubicación</b>').openPopup();
+    },
+    ()=>{setGpsStatus('Sin permiso GPS',false);userLat=-38.0055;userLng=-57.5426;map.setView([userLat,userLng],14);},
+    {enableHighAccuracy:true,timeout:10000}
+  );
+}
+
+function setGpsStatus(text,active){
+  document.getElementById('gps-text').textContent=text;
+  document.querySelector('.gps-dot').style.background=active?'#74C69D':'#FCA5A5';
+}
+
+// ── SEARCH ────────────────────────────────────────────────────
+function quickSearch(med){document.getElementById('med-input').value=med;startSearch();}
+
+function startSearch(){
+  const val=document.getElementById('med-input').value.trim();
+  if(!val)return;
+  currentMed=val; responses=[]; searchActive=true;
+  searchEndTime=Date.now()+TIMEOUT_MS;
+  clearPharmMarkers();
+  document.getElementById('results-section').style.display='none';
+  document.getElementById('empty-state').style.display='none';
+  document.getElementById('results-list').innerHTML='';
+  document.getElementById('results-count').textContent='0';
+  setStatusSearching();
+  sendQueryToBackend();
+  startCountdown();
+  startPolling();
+}
+
+function setStatusSearching(){
+  const bar=document.getElementById('status-bar');
+  bar.className='status-bar searching';
+  bar.innerHTML=`<div class="spinner"></div><span>Consultando farmacias sobre <b>${currentMed}</b>...</span><div class="countdown" id="countdown">10:00</div>`;
+}
+
+function startCountdown(){
+  if(countdownInterval)clearInterval(countdownInterval);
+  countdownInterval=setInterval(()=>{
+    const rem=searchEndTime-Date.now();
+    if(rem<=0){clearInterval(countdownInterval);clearInterval(pollInterval);searchActive=false;finishSearch();return;}
+    const m=Math.floor(rem/60000),s=Math.floor((rem%60000)/1000);
+    const el=document.getElementById('countdown');
+    if(el){el.textContent=`${m}:${s.toString().padStart(2,'0')}`;el.className='countdown'+(rem<120000?' urgent':'');}
+  },1000);
+}
+
+async function sendQueryToBackend(){
+  try{
+    await fetch(`${BACKEND_URL}/query`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({session:SESSION_ID,medicamento:currentMed,lat:userLat,lng:userLng,radio_km:5,expira:new Date(searchEndTime).toISOString()})});
+  }catch(e){simulateResponses();}
+}
+
+function startPolling(){
+  if(pollInterval)clearInterval(pollInterval);
+  pollInterval=setInterval(async()=>{
+    if(!searchActive){clearInterval(pollInterval);return;}
+    try{const r=await fetch(`${BACKEND_URL}/responses?session=${SESSION_ID}`);const data=await r.json();data.forEach(addPharmResponse);}catch(e){}
+  },5000);
+}
+
+function finishSearch(){
+  const bar=document.getElementById('status-bar');
+  // Guardar en historial
+  addToHistoryCli(currentMed, responses);
+  if(responses.length===0){
+    bar.className='status-bar timeout';
+    bar.innerHTML=`<span>⏱ Tiempo agotado — ninguna farmacia confirmó stock de <b>${currentMed}</b>.</span>`;
+    document.getElementById('empty-state').style.display='block';
+  } else {
+    bar.className='status-bar results';
+    bar.innerHTML=`<span>✅ ${responses.length} farmacia${responses.length>1?'s':''} confirmaron stock de <b>${currentMed}</b>.</span>`;
+  }
+}
+
+function addPharmResponse(pharm){
+  if(responses.find(r=>r.id===pharm.id))return;
+  responses.push(pharm);
+  document.getElementById('results-section').style.display='block';
+  document.getElementById('results-count').textContent=responses.length;
+  addMarkerToMap(pharm);
+  addCardToList(pharm);
+}
+
+function addMarkerToMap(pharm){
+  const icon=L.divIcon({html:`<div style="background:#2D6A4F;color:#fff;width:30px;height:30px;border-radius:50% 50% 50% 0;transform:rotate(-45deg);border:2.5px solid #fff;box-shadow:0 2px 8px rgba(0,0,0,0.3);display:flex;align-items:center;justify-content:center"><span style="transform:rotate(45deg);font-size:13px">💊</span></div>`,className:'',iconSize:[30,30],iconAnchor:[15,30],popupAnchor:[0,-30]});
+  const m=L.marker([pharm.lat,pharm.lng],{icon}).addTo(map).bindPopup(`<b>${pharm.nombre}</b><br>${pharm.direccion}<br><small>${pharm.horario}</small>`);
+  pharmMarkers.push(m);
+  const all=[userLat&&[userLat,userLng],...pharmMarkers.map(mk=>[mk.getLatLng().lat,mk.getLatLng().lng])].filter(Boolean);
+  if(all.length>1)map.fitBounds(all,{padding:[40,40]});
+}
+
+function addCardToList(pharm){
+  const dist=userLat?calcDist(userLat,userLng,pharm.lat,pharm.lng):null;
+  const distStr=dist?`${dist.toFixed(1)} km`:'';
+  const wa=`https://wa.me/${pharm.whatsapp}?text=${encodeURIComponent(`Hola! Vi que tienen ${currentMed} disponible. ¿Me pueden confirmar precio y si tienen stock ahora?`)}`;
+  const card=document.createElement('div');
+  card.className='pharm-card';
+  card.style.animationDelay=`${(responses.length-1)*0.1}s`;
+  card.innerHTML=`<div class="pharm-card-top"><div class="pharm-icon">💊</div><div class="pharm-info"><div class="pharm-name">${pharm.nombre}</div><div class="pharm-addr">${pharm.direccion}</div></div><div class="pharm-dist-badge">${distStr}</div></div><div class="pharm-meta"><span style="font-size:12px;color:var(--muted)">🕐 ${pharm.horario}</span><span class="stock-badge stock-ok">✓ Tiene stock</span><span class="resp-time">${pharm.hace||'< 1 min'}</span></div><button class="wa-btn" onclick="event.stopPropagation();window.open('${wa}','_blank')"><span>💬</span> Contactar por WhatsApp</button>`;
+  document.getElementById('results-list').prepend(card);
+}
+
+function clearPharmMarkers(){pharmMarkers.forEach(m=>map.removeLayer(m));pharmMarkers=[];}
+
+// ── HISTORIAL CLIENTE ─────────────────────────────────────────
+function addToHistoryCli(medicamento, farmacias) {
+  const now = new Date();
+  searchHistory.unshift({
+    id: Date.now(),
+    medicamento,
+    farmacias: farmacias.map(f=>({nombre:f.nombre,direccion:f.direccion,whatsapp:f.whatsapp,distancia:f.hace})),
+    cantidad: farmacias.length,
+    fecha: now.toLocaleDateString('es-AR'),
+    hora: `${now.getHours()}:${now.getMinutes().toString().padStart(2,'0')}`,
+    selected: false
+  });
+  document.getElementById('btn-delete-cli').disabled = searchHistory.length < MAX_ANTES_BORRAR;
+}
+
+function renderHistoryCli(){
+  const list = document.getElementById('hist-list-cli');
+  document.getElementById('hist-count-cli').textContent = `${searchHistory.length} búsquedas`;
+  document.getElementById('btn-delete-cli').disabled = searchHistory.length < MAX_ANTES_BORRAR;
+  if(searchHistory.length===0){list.innerHTML='<div style="text-align:center;padding:30px;color:var(--muted);font-size:13px">Tus búsquedas aparecerán acá.</div>';return;}
+  list.innerHTML=searchHistory.map((h,i)=>`
+    <div class="hist-row">
+      <div class="hist-row-top">
+        ${deleteMode?`<input type="checkbox" class="hist-cb" ${h.selected?'checked':''} onchange="toggleSelectCli(${i})"/>`:''}
+        <span class="hist-med">${h.medicamento}</span>
+        <span class="hist-tag ${h.cantidad>0?'hist-ok':'hist-none'}">${h.cantidad>0?h.cantidad+' farmacia'+(h.cantidad>1?'s':''):' Sin respuestas'}</span>
+        <span class="hist-time">${h.fecha} ${h.hora}</span>
+      </div>
+      ${h.farmacias.length>0?`<div class="hist-farmacias">${h.farmacias.map(f=>`<div class="hist-farmacia-item"><span>${f.nombre} — ${f.direccion}</span></div>`).join('')}</div>`:''}
+    </div>
+  `).join('');
+}
+
+function toggleSelectCli(i){searchHistory[i].selected=!searchHistory[i].selected;updateDeleteCountCli();}
+function updateDeleteCountCli(){const n=searchHistory.filter(h=>h.selected).length;document.getElementById('delete-count').textContent=`${n} seleccionado${n!==1?'s':''}`;}
+
+function toggleDeleteMode(){
+  if(searchHistory.length<MAX_ANTES_BORRAR){showToast(`Podés borrar después de ${MAX_ANTES_BORRAR} búsquedas`);return;}
+  deleteMode=true;renderHistoryCli();
+  document.getElementById('delete-bar').classList.add('show');
+  updateDeleteCountCli();
+}
+
+function cancelDelete(){deleteMode=false;searchHistory.forEach(h=>h.selected=false);renderHistoryCli();document.getElementById('delete-bar').classList.remove('show');}
+function confirmDelete(){const antes=searchHistory.length;searchHistory=searchHistory.filter(h=>!h.selected);deleteMode=false;renderHistoryCli();document.getElementById('delete-bar').classList.remove('show');showToast(`🗑 ${antes-searchHistory.length} búsqueda${antes-searchHistory.length!==1?'s':''} eliminada${antes-searchHistory.length!==1?'s':''}`);}
+
+// ── EXPORT EXCEL ──────────────────────────────────────────────
+function exportExcel(){
+  if(searchHistory.length===0){showToast('No hay datos para exportar');return;}
+  const rows=[['Medicamento','Farmacias encontradas','Fecha','Hora']];
+  searchHistory.forEach(h=>{
+    rows.push([h.medicamento, h.cantidad, h.fecha, h.hora]);
+    h.farmacias.forEach(f=>rows.push(['  → '+f.nombre, f.direccion,'','']));
+  });
+  const wb=XLSX.utils.book_new();
+  const ws=XLSX.utils.aoa_to_sheet(rows);
+  ws['!cols']=[{wch:24},{wch:20},{wch:12},{wch:8}];
+  XLSX.utils.book_append_sheet(wb,ws,'Mis búsquedas');
+  XLSX.writeFile(wb,`farmaya_busquedas_${new Date().toLocaleDateString('es-AR').replace(/\//g,'-')}.xlsx`);
+  showToast('✅ Excel descargado');
+}
+
+function exportPDF(){
+  if(searchHistory.length===0){showToast('No hay datos para exportar');return;}
+  const rows=searchHistory.map(h=>`
+    <tr>
+      <td><strong>${h.medicamento}</strong>${h.farmacias.length>0?'<br><small style="color:#6B7280">'+h.farmacias.map(f=>f.nombre).join(', ')+'</small>':''}</td>
+      <td style="color:${h.cantidad>0?'#2D6A4F':'#6B7280'};font-weight:600;text-align:center">${h.cantidad>0?h.cantidad+' farmacia'+(h.cantidad>1?'s':''):'Sin respuestas'}</td>
+      <td>${h.fecha}</td><td>${h.hora}</td>
+    </tr>`).join('');
+  const html=`<!DOCTYPE html><html><head><meta charset="UTF-8"><style>body{font-family:sans-serif;padding:32px;color:#1B1B1B}h1{font-size:22px;color:#2D6A4F;margin-bottom:4px}p{font-size:12px;color:#6B7280;margin-bottom:24px}table{width:100%;border-collapse:collapse;font-size:13px}th{background:#2D6A4F;color:#fff;padding:8px 12px;text-align:left}td{padding:8px 12px;border-bottom:1px solid #E5E7EB}tr:nth-child(even) td{background:#F9FAF8}</style></head><body><h1>FarmaYa — Mis búsquedas</h1><p>Exportado el ${new Date().toLocaleDateString('es-AR')}</p><table><thead><tr><th>Medicamento</th><th>Resultado</th><th>Fecha</th><th>Hora</th></tr></thead><tbody>${rows}</tbody></table></body></html>`;
+  const w=window.open('','_blank');w.document.write(html);w.document.close();setTimeout(()=>w.print(),500);
+  showToast('✅ PDF listo para imprimir/guardar');
+}
+
+// ── UTILS ─────────────────────────────────────────────────────
+function calcDist(lat1,lng1,lat2,lng2){const R=6371,dLat=(lat2-lat1)*Math.PI/180,dLng=(lng2-lng1)*Math.PI/180,a=Math.sin(dLat/2)**2+Math.cos(lat1*Math.PI/180)*Math.cos(lat2*Math.PI/180)*Math.sin(dLng/2)**2;return R*2*Math.atan2(Math.sqrt(a),Math.sqrt(1-a));}
+function showToast(msg){const t=document.getElementById('toast');t.textContent=msg;t.classList.add('show');setTimeout(()=>t.classList.remove('show'),3000);}
+
+function simulateResponses(){
+  const base=userLat||-38.0055,baseLng=userLng||-57.5426;
+  const demos=[
+    {id:'f1',nombre:'Farmacia Del Pueblo',direccion:'Av. Mitre 342',horario:'8:00–22:00',lat:base+0.003,lng:baseLng+0.004,whatsapp:'5492235551234',hace:'2 min'},
+    {id:'f2',nombre:'Farmacity Centro',direccion:'Brown 1180',horario:'8:00–00:00',lat:base-0.005,lng:baseLng+0.008,whatsapp:'5492235555678',hace:'4 min'},
+  ];
+  [4000,12000].forEach((d,i)=>setTimeout(()=>{if(searchActive)addPharmResponse(demos[i]);},d));
+}
+
+document.getElementById('med-input').addEventListener('keydown',e=>{if(e.key==='Enter')startSearch();});
+initMap(); getLocation();
+</script>
+</body>
+</html>

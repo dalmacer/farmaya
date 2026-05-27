@@ -1,0 +1,393 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>FarmaYa — Panel Farmacia</title>
+<link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@300;400;500;600&family=Space+Mono:wght@400;700&display=swap" rel="stylesheet">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+<style>
+:root {
+  --green:#2D6A4F;--green-light:#52B788;--green-pale:#D8F3DC;
+  --amber:#E76F51;--amber-pale:#FDE8E2;
+  --red:#DC2626;--red-pale:#FEE2E2;
+  --text:#1B1B1B;--muted:#6B7280;
+  --surface:#F9FAF8;--white:#FFFFFF;--border:#E5E7EB;
+  --radius:14px;--mono:'Space Mono',monospace;--sans:'DM Sans',sans-serif;
+}
+*{box-sizing:border-box;margin:0;padding:0}
+body{font-family:var(--sans);background:var(--surface);color:var(--text)}
+header{background:var(--green);padding:14px 20px;display:flex;align-items:center;justify-content:space-between;position:sticky;top:0;z-index:100}
+.logo{font-family:var(--mono);color:#fff;font-size:16px;font-weight:700}
+.logo span{color:#74C69D}
+.online-dot{width:8px;height:8px;border-radius:50%;background:#74C69D;animation:pulse 2s infinite}
+@keyframes pulse{0%,100%{opacity:1}50%{opacity:0.4}}
+.pharm-badge{background:rgba(255,255,255,0.2);color:#fff;border-radius:100px;padding:4px 12px;font-size:12px}
+
+.tabs{display:flex;border-bottom:1px solid var(--border);background:var(--white);padding:0 20px}
+.tab{padding:12px 16px;font-size:13px;font-weight:500;color:var(--muted);cursor:pointer;border-bottom:2px solid transparent;transition:all 0.15s}
+.tab.active{color:var(--green);border-bottom-color:var(--green)}
+
+.stats{display:grid;grid-template-columns:repeat(3,1fr);gap:10px;padding:16px 20px}
+.stat-card{background:var(--white);border:1px solid var(--border);border-radius:var(--radius);padding:12px 14px}
+.stat-val{font-family:var(--mono);font-size:22px;font-weight:700;color:var(--green);margin-bottom:2px}
+.stat-label{font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:0.05em}
+
+.section-header{padding:0 20px 8px;display:flex;align-items:center;justify-content:space-between}
+.section-title{font-size:14px;font-weight:600;color:var(--text)}
+.badge{font-family:var(--mono);font-size:11px;background:var(--amber-pale);color:var(--amber);padding:2px 8px;border-radius:100px;font-weight:700}
+.badge.none{background:#F3F4F6;color:var(--muted)}
+
+.query-list{padding:0 20px;display:flex;flex-direction:column;gap:10px;margin-bottom:24px}
+.query-card{background:var(--white);border:1.5px solid var(--border);border-radius:var(--radius);overflow:hidden;animation:slideIn 0.3s ease forwards;opacity:0;transform:translateY(6px)}
+@keyframes slideIn{to{opacity:1;transform:translateY(0)}}
+.query-card.answered{border-color:var(--green-light);opacity:0.7}
+.query-card.expired{opacity:0.5}
+.query-top{display:flex;align-items:center;gap:12px;padding:14px 16px}
+.query-avatar{width:40px;height:40px;border-radius:50%;background:var(--green-pale);display:flex;align-items:center;justify-content:center;font-size:18px;flex-shrink:0}
+.query-med{font-size:15px;font-weight:600;color:var(--text);margin-bottom:2px}
+.query-meta{font-size:12px;color:var(--muted)}
+.timer-pill{margin-left:auto;font-family:var(--mono);font-size:12px;font-weight:700;background:var(--amber-pale);color:var(--amber);padding:4px 10px;border-radius:100px;flex-shrink:0}
+.timer-pill.urgent{background:var(--red-pale);color:var(--red)}
+.timer-pill.done{background:#F3F4F6;color:var(--muted)}
+.query-actions{display:flex;gap:8px;padding:12px 16px;border-top:1px solid var(--border);background:var(--surface)}
+.btn{flex:1;padding:10px;border-radius:10px;font-family:var(--sans);font-size:13px;font-weight:600;cursor:pointer;border:none;transition:all 0.15s}
+.btn-yes{background:var(--green);color:#fff}
+.btn-yes:hover{background:var(--green-light)}
+.btn-no{background:var(--white);color:var(--muted);border:1px solid var(--border)}
+.btn-no:hover{background:#F3F4F6}
+.btn:active{transform:scale(0.97)}
+.answered-label{flex:1;text-align:center;padding:10px;font-size:13px;font-weight:600;color:var(--green);background:var(--green-pale);border-radius:10px}
+.expired-label{flex:1;text-align:center;padding:10px;font-size:13px;color:var(--muted);background:#F3F4F6;border-radius:10px}
+
+/* HISTORIAL */
+.hist-section{padding:0 20px 100px}
+.hist-toolbar{display:flex;gap:8px;margin-bottom:12px;flex-wrap:wrap;align-items:center}
+.hist-count{font-size:12px;color:var(--muted);margin-right:auto}
+.hist-btn{display:flex;align-items:center;gap:6px;padding:7px 14px;border-radius:100px;font-size:12px;font-weight:600;cursor:pointer;border:1px solid var(--border);background:var(--white);color:var(--text);transition:all 0.15s}
+.hist-btn:hover{background:var(--surface)}
+.hist-btn.excel{border-color:#16A34A;color:#16A34A}
+.hist-btn.excel:hover{background:#F0FFF4}
+.hist-btn.pdf{border-color:#DC2626;color:#DC2626}
+.hist-btn.pdf:hover{background:#FEF2F2}
+.hist-btn.del{border-color:var(--border);color:var(--muted)}
+.hist-btn.del:disabled{opacity:0.4;cursor:not-allowed}
+.hist-row{background:var(--white);border:1px solid var(--border);border-radius:10px;padding:10px 14px;display:flex;align-items:center;gap:10px;font-size:13px;margin-bottom:8px}
+.hist-med{font-weight:500;flex:1}
+.hist-tag{font-size:11px;padding:2px 8px;border-radius:100px;font-weight:600}
+.hist-ok{background:var(--green-pale);color:var(--green)}
+.hist-no{background:#F3F4F6;color:var(--muted)}
+.hist-time{font-family:var(--mono);font-size:11px;color:var(--muted)}
+.hist-cb{width:16px;height:16px;cursor:pointer;accent-color:var(--green)}
+.delete-bar{position:fixed;bottom:0;left:0;right:0;background:var(--red);color:#fff;padding:14px 20px;display:flex;align-items:center;justify-content:space-between;font-size:13px;font-weight:600;transform:translateY(100%);transition:transform 0.3s;z-index:200}
+.delete-bar.show{transform:translateY(0)}
+.delete-bar button{background:rgba(255,255,255,0.2);border:none;color:#fff;padding:8px 16px;border-radius:100px;font-size:12px;font-weight:700;cursor:pointer}
+
+.toast{position:fixed;bottom:20px;left:50%;transform:translateX(-50%) translateY(80px);background:var(--green);color:#fff;padding:10px 20px;border-radius:100px;font-size:13px;font-weight:600;transition:transform 0.3s;z-index:9999;white-space:nowrap}
+.toast.show{transform:translateX(-50%) translateY(0)}
+
+.tab-content{display:none}
+.tab-content.active{display:block}
+</style>
+</head>
+<body>
+
+<header>
+  <div class="logo">Farma<span>Ya</span> <span style="font-size:11px;font-weight:400;opacity:0.7">Panel</span></div>
+  <div style="display:flex;align-items:center;gap:10px">
+    <div class="pharm-badge" id="pharm-badge">💊 Farmacia Prueba</div>
+    <div class="online-dot"></div>
+  </div>
+</header>
+
+<div class="tabs">
+  <div class="tab active" onclick="switchTab('consultas')">Consultas activas</div>
+  <div class="tab" onclick="switchTab('historial')">Historial</div>
+</div>
+
+<!-- TAB CONSULTAS -->
+<div class="tab-content active" id="tab-consultas">
+  <div class="stats">
+    <div class="stat-card"><div class="stat-val" id="stat-hoy">0</div><div class="stat-label">Hoy</div></div>
+    <div class="stat-card"><div class="stat-val" id="stat-resp">0</div><div class="stat-label">Con stock</div></div>
+    <div class="stat-card"><div class="stat-val" id="stat-conv">0%</div><div class="stat-label">Conversión</div></div>
+  </div>
+  <div class="section-header">
+    <span class="section-title">Pendientes</span>
+    <span class="badge none" id="active-badge">0 pendientes</span>
+  </div>
+  <div class="query-list" id="query-list">
+    <div style="text-align:center;padding:30px;color:var(--muted);font-size:13px">No hay consultas activas.</div>
+  </div>
+</div>
+
+<!-- TAB HISTORIAL -->
+<div class="tab-content" id="tab-historial">
+  <div class="hist-section">
+    <div class="hist-toolbar" style="margin-top:16px">
+      <span class="hist-count" id="hist-count">0 registros</span>
+      <button class="hist-btn excel" onclick="exportExcel()">⬇ Excel</button>
+      <button class="hist-btn pdf" onclick="exportPDF()">⬇ PDF</button>
+      <button class="hist-btn del" id="btn-delete" onclick="toggleDeleteMode()" disabled>🗑 Borrar</button>
+    </div>
+    <div id="hist-list"><div style="text-align:center;padding:30px;color:var(--muted);font-size:13px">Sin historial todavía.</div></div>
+  </div>
+</div>
+
+<div class="delete-bar" id="delete-bar">
+  <span id="delete-count">0 seleccionados</span>
+  <div style="display:flex;gap:8px">
+    <button onclick="cancelDelete()">Cancelar</button>
+    <button onclick="confirmDelete()" style="background:rgba(255,255,255,0.9);color:var(--red)">Confirmar borrado</button>
+  </div>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script>
+const BACKEND_URL = 'http://localhost:3000';
+const FARMACIA_ID = 'farmacia_prueba';
+const FARMACIA_NOMBRE = 'Farmacia Prueba';
+const FARMACIA_WHATSAPP = '5491168568950';
+const MAX_ANTES_BORRAR = 10;
+
+let queries = [], history = [], timers = {};
+let statsHoy = 0, statsResp = 0;
+let deleteMode = false;
+
+// ── TABS ──────────────────────────────────────────────────────
+function switchTab(tab) {
+  document.querySelectorAll('.tab').forEach((t,i) => t.classList.toggle('active', ['consultas','historial'][i]===tab));
+  document.querySelectorAll('.tab-content').forEach(t => t.classList.remove('active'));
+  document.getElementById('tab-'+tab).classList.add('active');
+  if(tab==='historial') renderHistory();
+}
+
+// ── POLLING ───────────────────────────────────────────────────
+function startPolling() {
+  setInterval(fetchQueries, 6000);
+  simulateDemoQueries();
+}
+
+async function fetchQueries() {
+  try {
+    const r = await fetch(`${BACKEND_URL}/farmacia/${FARMACIA_ID}/queries`);
+    const data = await r.json();
+    data.forEach(addQuery);
+  } catch(e) {}
+}
+
+// ── ADD QUERY ─────────────────────────────────────────────────
+function addQuery(q) {
+  if (queries.find(x=>x.id===q.id)) return;
+  queries.push({...q, status:'pending'});
+  statsHoy++;
+  renderQueries(); updateStats(); playAlert();
+  startTimer(q.id, q.expira);
+}
+
+function startTimer(id, expiraISO) {
+  const end = expiraISO ? new Date(expiraISO).getTime() : Date.now()+10*60*1000;
+  timers[id] = setInterval(()=>{
+    const rem = end - Date.now();
+    const el = document.getElementById('timer-'+id);
+    if(!el){clearInterval(timers[id]);return;}
+    if(rem<=0){
+      clearInterval(timers[id]);
+      const q=queries.find(x=>x.id===id);
+      if(q&&q.status==='pending'){q.status='expired';renderQueries();addToHistory(q,false,'Expiró');}
+      return;
+    }
+    const m=Math.floor(rem/60000), s=Math.floor((rem%60000)/1000);
+    el.textContent=`${m}:${s.toString().padStart(2,'0')}`;
+    el.className='timer-pill'+(rem<120000?' urgent':'');
+  },1000);
+}
+
+// ── ANSWER ────────────────────────────────────────────────────
+async function answerQuery(id, tieneStock) {
+  const q = queries.find(x=>x.id===id);
+  if(!q||q.status!=='pending') return;
+  q.status='answered'; q.tieneStock=tieneStock;
+  clearInterval(timers[id]);
+  renderQueries(); updateStats();
+  addToHistory(q, tieneStock, tieneStock?'Con stock':'Sin stock');
+  showToast(tieneStock?`✅ Confirmaste stock de ${q.medicamento}`:`Respondiste: sin stock de ${q.medicamento}`);
+  if(tieneStock) statsResp++;
+  updateStats();
+  try {
+    await fetch(`${BACKEND_URL}/respond`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({session:q.session,farmacia_id:FARMACIA_ID,nombre:FARMACIA_NOMBRE,lat:-38.09345,lng:-57.55958,direccion:'Santa Maria de Oro 4519',horario:'8:00-22:00',whatsapp:FARMACIA_WHATSAPP,tiene_stock:tieneStock,medicamento:q.medicamento})});
+  } catch(e){}
+}
+
+// ── HISTORY ───────────────────────────────────────────────────
+function addToHistory(q, ok, estado) {
+  const now = new Date();
+  history.unshift({
+    id: Date.now(),
+    medicamento: q.medicamento,
+    distancia: q.distancia||'—',
+    estado: estado,
+    ok: ok,
+    fecha: now.toLocaleDateString('es-AR'),
+    hora: `${now.getHours()}:${now.getMinutes().toString().padStart(2,'0')}`,
+    selected: false
+  });
+  const btn = document.getElementById('btn-delete');
+  btn.disabled = history.length < MAX_ANTES_BORRAR;
+  renderHistory();
+}
+
+function renderHistory() {
+  const list = document.getElementById('hist-list');
+  document.getElementById('hist-count').textContent = `${history.length} registros`;
+  const btn = document.getElementById('btn-delete');
+  btn.disabled = history.length < MAX_ANTES_BORRAR;
+
+  if(history.length===0){
+    list.innerHTML='<div style="text-align:center;padding:30px;color:var(--muted);font-size:13px">Sin historial todavía.</div>';
+    return;
+  }
+  list.innerHTML = history.map((h,i)=>`
+    <div class="hist-row">
+      ${deleteMode?`<input type="checkbox" class="hist-cb" ${h.selected?'checked':''} onchange="toggleSelect(${i})"/>`:''}
+      <span class="hist-med">${h.medicamento}</span>
+      <span style="font-size:12px;color:var(--muted)">${h.distancia}</span>
+      <span class="hist-tag ${h.ok?'hist-ok':'hist-no'}">${h.estado}</span>
+      <span class="hist-time">${h.fecha} ${h.hora}</span>
+    </div>
+  `).join('');
+}
+
+// ── DELETE MODE ───────────────────────────────────────────────
+function toggleDeleteMode() {
+  if(history.length < MAX_ANTES_BORRAR){ showToast(`Podés borrar después de ${MAX_ANTES_BORRAR} consultas`); return; }
+  deleteMode = true;
+  renderHistory();
+  document.getElementById('delete-bar').classList.add('show');
+  updateDeleteCount();
+}
+
+function toggleSelect(i) {
+  history[i].selected = !history[i].selected;
+  updateDeleteCount();
+}
+
+function updateDeleteCount() {
+  const n = history.filter(h=>h.selected).length;
+  document.getElementById('delete-count').textContent = `${n} seleccionado${n!==1?'s':''}`;
+}
+
+function cancelDelete() {
+  deleteMode = false;
+  history.forEach(h=>h.selected=false);
+  renderHistory();
+  document.getElementById('delete-bar').classList.remove('show');
+}
+
+function confirmDelete() {
+  const antes = history.length;
+  history = history.filter(h=>!h.selected);
+  deleteMode = false;
+  renderHistory();
+  document.getElementById('delete-bar').classList.remove('show');
+  showToast(`🗑 ${antes-history.length} consulta${antes-history.length!==1?'s':''} eliminada${antes-history.length!==1?'s':''}`);
+}
+
+// ── EXPORT EXCEL ──────────────────────────────────────────────
+function exportExcel() {
+  if(history.length===0){showToast('No hay datos para exportar');return;}
+  const data = [
+    ['Medicamento','Distancia','Estado','Fecha','Hora'],
+    ...history.map(h=>[h.medicamento, h.distancia, h.estado, h.fecha, h.hora])
+  ];
+  const wb = XLSX.utils.book_new();
+  const ws = XLSX.utils.aoa_to_sheet(data);
+  ws['!cols'] = [{wch:22},{wch:12},{wch:14},{wch:12},{wch:8}];
+  XLSX.utils.book_append_sheet(wb, ws, 'Historial');
+  XLSX.writeFile(wb, `farmaya_historial_${new Date().toLocaleDateString('es-AR').replace(/\//g,'-')}.xlsx`);
+  showToast('✅ Excel descargado');
+}
+
+// ── EXPORT PDF ────────────────────────────────────────────────
+function exportPDF() {
+  if(history.length===0){showToast('No hay datos para exportar');return;}
+  const rows = history.map(h=>`
+    <tr>
+      <td>${h.medicamento}</td>
+      <td>${h.distancia}</td>
+      <td style="color:${h.ok?'#2D6A4F':'#6B7280'};font-weight:600">${h.estado}</td>
+      <td>${h.fecha}</td>
+      <td>${h.hora}</td>
+    </tr>
+  `).join('');
+  const html = `<!DOCTYPE html><html><head><meta charset="UTF-8">
+  <style>
+    body{font-family:sans-serif;padding:32px;color:#1B1B1B}
+    h1{font-size:22px;color:#2D6A4F;margin-bottom:4px}
+    p{font-size:12px;color:#6B7280;margin-bottom:24px}
+    table{width:100%;border-collapse:collapse;font-size:13px}
+    th{background:#2D6A4F;color:#fff;padding:8px 12px;text-align:left}
+    td{padding:8px 12px;border-bottom:1px solid #E5E7EB}
+    tr:nth-child(even) td{background:#F9FAF8}
+  </style></head><body>
+  <h1>FarmaYa — Historial de consultas</h1>
+  <p>${FARMACIA_NOMBRE} · Exportado el ${new Date().toLocaleDateString('es-AR')}</p>
+  <table><thead><tr><th>Medicamento</th><th>Distancia</th><th>Estado</th><th>Fecha</th><th>Hora</th></tr></thead>
+  <tbody>${rows}</tbody></table>
+  </body></html>`;
+  const w = window.open('','_blank');
+  w.document.write(html);
+  w.document.close();
+  setTimeout(()=>w.print(), 500);
+  showToast('✅ PDF listo para imprimir/guardar');
+}
+
+// ── RENDER QUERIES ────────────────────────────────────────────
+function renderQueries() {
+  const list = document.getElementById('query-list');
+  const activas = queries.filter(q=>q.status==='pending');
+  const badge = document.getElementById('active-badge');
+  badge.textContent = `${activas.length} pendiente${activas.length!==1?'s':''}`;
+  badge.className = 'badge'+(activas.length===0?' none':'');
+  if(queries.length===0){list.innerHTML='<div style="text-align:center;padding:30px;color:var(--muted);font-size:13px">No hay consultas activas.</div>';return;}
+  list.innerHTML='';
+  [...queries].reverse().forEach(q=>{
+    const card=document.createElement('div');
+    card.className='query-card'+(q.status==='answered'?' answered':'')+(q.status==='expired'?' expired':'');
+    const end=q.expiraTime||Date.now()+10*60*1000;
+    const rem=end-Date.now();
+    const m=rem>0?Math.floor(rem/60000):0, s=rem>0?Math.floor((rem%60000)/1000):0;
+    const tClass=q.status!=='pending'?'timer-pill done':(rem<120000?'timer-pill urgent':'timer-pill');
+    const tTxt=q.status==='answered'?'✓ resp.':q.status==='expired'?'expiró':`${m}:${s.toString().padStart(2,'0')}`;
+    let actions='';
+    if(q.status==='pending') actions=`<button class="btn btn-yes" onclick="answerQuery('${q.id}',true)">✓ Tengo stock</button><button class="btn btn-no" onclick="answerQuery('${q.id}',false)">✗ Sin stock</button>`;
+    else if(q.status==='answered'&&q.tieneStock) actions=`<div class="answered-label">✓ Confirmaste stock</div>`;
+    else actions=`<div class="expired-label">${q.status==='expired'?'Consulta expirada':'Sin stock — respondido'}</div>`;
+    card.innerHTML=`<div class="query-top"><div class="query-avatar">💊</div><div style="flex:1;min-width:0"><div class="query-med">${q.medicamento}</div><div class="query-meta">A ${q.distancia||'< 1 km'} · ${q.hace||'Ahora'}</div></div><div class="${tClass}" id="timer-${q.id}">${tTxt}</div></div><div class="query-actions">${actions}</div>`;
+    list.appendChild(card);
+  });
+}
+
+function updateStats() {
+  document.getElementById('stat-hoy').textContent=statsHoy;
+  document.getElementById('stat-resp').textContent=statsResp;
+  document.getElementById('stat-conv').textContent=statsHoy>0?Math.round((statsResp/statsHoy)*100)+'%':'0%';
+}
+
+function showToast(msg){const t=document.getElementById('toast');t.textContent=msg;t.classList.add('show');setTimeout(()=>t.classList.remove('show'),3000)}
+function playAlert(){try{const c=new AudioContext(),o=c.createOscillator(),g=c.createGain();o.connect(g);g.connect(c.destination);o.frequency.value=880;g.gain.setValueAtTime(0.3,c.currentTime);g.gain.exponentialRampToValueAtTime(0.001,c.currentTime+0.4);o.start();o.stop(c.currentTime+0.4)}catch(e){}}
+
+function simulateDemoQueries(){
+  const demos=[
+    {id:'q1',session:'ABC123',medicamento:'Ibuprofeno 400mg',distancia:'0.8 km',hace:'hace 1 min',expiraTime:Date.now()+9.5*60*1000},
+    {id:'q2',session:'DEF456',medicamento:'Amoxicilina 500mg',distancia:'1.2 km',hace:'Ahora',expiraTime:Date.now()+10*60*1000},
+  ];
+  setTimeout(()=>addQuery(demos[0]),1500);
+  setTimeout(()=>addQuery(demos[1]),5000);
+}
+
+renderQueries(); startPolling();
+</script>
+</body>
+</html>

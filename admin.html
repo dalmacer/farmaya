@@ -1,0 +1,317 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>FarmaYa — Panel Admin</title>
+<link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@300;400;500;600&family=Space+Mono:wght@400;700&display=swap" rel="stylesheet">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+<style>
+:root{
+  --green:#2D6A4F;--green-light:#52B788;--green-pale:#D8F3DC;
+  --amber:#E76F51;--amber-pale:#FDE8E2;
+  --red:#DC2626;--red-pale:#FEE2E2;
+  --blue:#1D4ED8;--blue-pale:#EFF6FF;
+  --text:#1B1B1B;--muted:#6B7280;
+  --surface:#F9FAF8;--white:#FFFFFF;--border:#E5E7EB;
+  --radius:14px;--mono:'Space Mono',monospace;--sans:'DM Sans',sans-serif;
+}
+*{box-sizing:border-box;margin:0;padding:0}
+body{font-family:var(--sans);background:var(--surface);color:var(--text)}
+header{background:#111827;padding:14px 20px;display:flex;align-items:center;justify-content:space-between;position:sticky;top:0;z-index:100}
+.logo{font-family:var(--mono);color:#fff;font-size:16px;font-weight:700}
+.logo span{color:#74C69D}
+.admin-badge{background:rgba(255,255,255,0.15);color:#fff;border-radius:100px;padding:4px 12px;font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:0.05em}
+
+.tabs{display:flex;border-bottom:1px solid var(--border);background:var(--white);padding:0 20px;overflow-x:auto}
+.tab{padding:12px 16px;font-size:13px;font-weight:500;color:var(--muted);cursor:pointer;border-bottom:2px solid transparent;white-space:nowrap;transition:all 0.15s}
+.tab.active{color:var(--green);border-bottom-color:var(--green)}
+.tab-content{display:none}
+.tab-content.active{display:block}
+
+/* STATS */
+.stats-grid{display:grid;grid-template-columns:repeat(2,1fr);gap:10px;padding:16px 20px}
+.stat-card{background:var(--white);border:1px solid var(--border);border-radius:var(--radius);padding:14px}
+.stat-val{font-family:var(--mono);font-size:24px;font-weight:700;margin-bottom:2px}
+.stat-label{font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:0.05em}
+.stat-green{color:var(--green)}
+.stat-blue{color:var(--blue)}
+.stat-amber{color:var(--amber)}
+.stat-red{color:var(--red)}
+
+/* SECTION */
+.section{padding:0 20px 24px}
+.section-header{display:flex;align-items:center;justify-content:space-between;margin-bottom:12px}
+.section-title{font-size:14px;font-weight:600;color:var(--text)}
+
+/* TOOLBAR */
+.toolbar{display:flex;gap:8px;margin-bottom:12px;flex-wrap:wrap;align-items:center}
+.toolbar-count{font-size:12px;color:var(--muted);margin-right:auto}
+.tbtn{display:flex;align-items:center;gap:6px;padding:7px 14px;border-radius:100px;font-size:12px;font-weight:600;cursor:pointer;border:1px solid var(--border);background:var(--white);color:var(--text);transition:all 0.15s}
+.tbtn.excel{border-color:#16A34A;color:#16A34A}
+.tbtn.excel:hover{background:#F0FFF4}
+.tbtn.pdf{border-color:#DC2626;color:#DC2626}
+.tbtn.pdf:hover{background:#FEF2F2}
+.tbtn.del{border-color:var(--red);color:var(--red)}
+.tbtn.del:hover{background:var(--red-pale)}
+.tbtn:disabled{opacity:0.4;cursor:not-allowed}
+
+/* TABLE */
+.data-table{width:100%;border-collapse:collapse;font-size:13px;background:var(--white);border-radius:var(--radius);overflow:hidden;border:1px solid var(--border)}
+.data-table th{background:#F3F4F6;padding:10px 12px;text-align:left;font-size:11px;font-weight:600;color:var(--muted);text-transform:uppercase;letter-spacing:0.05em;border-bottom:1px solid var(--border)}
+.data-table td{padding:10px 12px;border-bottom:1px solid var(--border);vertical-align:middle}
+.data-table tr:last-child td{border-bottom:none}
+.data-table tr:hover td{background:#F9FAF8}
+.tag{font-size:11px;padding:2px 8px;border-radius:100px;font-weight:600;white-space:nowrap}
+.tag-ok{background:var(--green-pale);color:var(--green)}
+.tag-no{background:#F3F4F6;color:var(--muted)}
+.tag-active{background:var(--blue-pale);color:var(--blue)}
+.cb{width:15px;height:15px;cursor:pointer;accent-color:var(--green)}
+
+/* FARMACIA CARDS */
+.farm-card{background:var(--white);border:1px solid var(--border);border-radius:var(--radius);padding:14px 16px;margin-bottom:10px;display:flex;align-items:center;gap:12px}
+.farm-avatar{width:38px;height:38px;border-radius:10px;background:var(--green-pale);display:flex;align-items:center;justify-content:center;font-size:18px;flex-shrink:0}
+.farm-info{flex:1;min-width:0}
+.farm-name{font-size:14px;font-weight:600;color:var(--text);margin-bottom:2px}
+.farm-addr{font-size:12px;color:var(--muted)}
+.farm-stat{font-family:var(--mono);font-size:11px;color:var(--muted);text-align:right}
+.farm-stat span{display:block;font-size:16px;font-weight:700;color:var(--green)}
+.farm-actions{display:flex;gap:6px;margin-top:8px}
+.btn-sm{padding:5px 12px;border-radius:100px;font-size:11px;font-weight:600;cursor:pointer;border:1px solid var(--border);background:var(--white);color:var(--text);transition:all 0.15s}
+.btn-sm.danger{border-color:var(--red);color:var(--red)}
+.btn-sm.danger:hover{background:var(--red-pale)}
+
+/* DELETE BAR */
+.delete-bar{position:fixed;bottom:0;left:0;right:0;background:var(--red);color:#fff;padding:14px 20px;display:flex;align-items:center;justify-content:space-between;font-size:13px;font-weight:600;transform:translateY(100%);transition:transform 0.3s;z-index:200}
+.delete-bar.show{transform:translateY(0)}
+.delete-bar button{background:rgba(255,255,255,0.2);border:none;color:#fff;padding:8px 16px;border-radius:100px;font-size:12px;font-weight:700;cursor:pointer}
+
+.toast{position:fixed;bottom:20px;left:50%;transform:translateX(-50%) translateY(80px);background:#111827;color:#fff;padding:10px 20px;border-radius:100px;font-size:13px;font-weight:600;transition:transform 0.3s;z-index:9999;white-space:nowrap}
+.toast.show{transform:translateX(-50%) translateY(0)}
+
+.empty{text-align:center;padding:30px;color:var(--muted);font-size:13px}
+</style>
+</head>
+<body>
+
+<header>
+  <div class="logo">Farma<span>Ya</span></div>
+  <div class="admin-badge">👑 Admin — Dalma</div>
+</header>
+
+<div class="tabs">
+  <div class="tab active" onclick="switchTab('resumen')">Resumen</div>
+  <div class="tab" onclick="switchTab('consultas')">Consultas</div>
+  <div class="tab" onclick="switchTab('farmacias')">Farmacias</div>
+</div>
+
+<!-- TAB RESUMEN -->
+<div class="tab-content active" id="tab-resumen">
+  <div class="stats-grid">
+    <div class="stat-card"><div class="stat-val stat-green" id="s-consultas">0</div><div class="stat-label">Consultas totales</div></div>
+    <div class="stat-card"><div class="stat-val stat-blue" id="s-farmacias">0</div><div class="stat-label">Farmacias activas</div></div>
+    <div class="stat-card"><div class="stat-val stat-amber" id="s-stock">0%</div><div class="stat-label">Con stock</div></div>
+    <div class="stat-card"><div class="stat-val stat-red" id="s-sin">0</div><div class="stat-label">Sin respuesta</div></div>
+  </div>
+  <div class="section">
+    <div class="section-title" style="margin-bottom:12px">Actividad reciente</div>
+    <div id="resumen-list"><div class="empty">Sin actividad todavía.</div></div>
+  </div>
+</div>
+
+<!-- TAB CONSULTAS -->
+<div class="tab-content" id="tab-consultas">
+  <div class="section" style="padding-top:16px">
+    <div class="toolbar">
+      <span class="toolbar-count" id="cons-count">0 registros</span>
+      <button class="tbtn excel" onclick="exportConsultasExcel()">⬇ Excel</button>
+      <button class="tbtn pdf" onclick="exportConsultasPDF()">⬇ PDF</button>
+      <button class="tbtn del" id="btn-del-cons" onclick="toggleDeleteCons()" disabled>🗑 Borrar seleccionados</button>
+    </div>
+    <div style="overflow-x:auto">
+      <table class="data-table" id="cons-table">
+        <thead><tr><th></th><th>Medicamento</th><th>Farmacia</th><th>Estado</th><th>Distancia</th><th>Fecha</th><th>Hora</th></tr></thead>
+        <tbody id="cons-body"><tr><td colspan="7" class="empty">Sin consultas todavía.</td></tr></tbody>
+      </table>
+    </div>
+  </div>
+</div>
+
+<!-- TAB FARMACIAS -->
+<div class="tab-content" id="tab-farmacias">
+  <div class="section" style="padding-top:16px">
+    <div class="toolbar">
+      <span class="toolbar-count" id="farm-count">0 farmacias</span>
+      <button class="tbtn excel" onclick="exportFarmaciasExcel()">⬇ Excel</button>
+      <button class="tbtn pdf" onclick="exportFarmaciasPDF()">⬇ PDF</button>
+    </div>
+    <div id="farm-list"><div class="empty">Sin farmacias registradas todavía.</div></div>
+  </div>
+</div>
+
+<div class="delete-bar" id="delete-bar">
+  <span id="delete-count">0 seleccionados</span>
+  <div style="display:flex;gap:8px">
+    <button onclick="cancelDeleteCons()">Cancelar</button>
+    <button onclick="confirmDeleteCons()" style="background:rgba(255,255,255,0.9);color:var(--red)">Confirmar borrado</button>
+  </div>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script>
+const BACKEND_URL = 'http://localhost:3000';
+const MAX_ANTES_BORRAR = 10;
+
+let consultas = [], farmacias = [], deleteModeCons = false;
+
+// ── TABS ──────────────────────────────────────────────────────
+function switchTab(tab) {
+  document.querySelectorAll('.tab').forEach((t,i)=>t.classList.toggle('active',['resumen','consultas','farmacias'][i]===tab));
+  document.querySelectorAll('.tab-content').forEach(t=>t.classList.remove('active'));
+  document.getElementById('tab-'+tab).classList.add('active');
+  if(tab==='consultas') renderConsultas();
+  if(tab==='farmacias') renderFarmacias();
+  if(tab==='resumen') renderResumen();
+}
+
+// ── DEMO DATA ─────────────────────────────────────────────────
+function loadDemoData() {
+  farmacias = [
+    {id:'farmacia_prueba', nombre:'Farmacia Prueba', direccion:'Santa Maria de Oro 4519, MdP', whatsapp:'5491168568950', horario:'8:00-22:00', lat:-38.09345, lng:-57.55958, activa:true, consultas:8, conStock:5},
+    {id:'farmacia_centro', nombre:'Farmacia Centro', direccion:'San Martín 1234, MdP', whatsapp:'5492236001234', horario:'8:00-21:00', lat:-38.0012, lng:-57.5523, activa:true, consultas:12, conStock:9},
+  ];
+  consultas = [
+    {id:1, medicamento:'Ibuprofeno 400mg', farmacia:'Farmacia Prueba', estado:'Con stock', distancia:'0.8 km', fecha:'26/05/2026', hora:'10:23', selected:false},
+    {id:2, medicamento:'Paracetamol 500mg', farmacia:'Farmacia Centro', estado:'Con stock', distancia:'1.2 km', fecha:'26/05/2026', hora:'10:45', selected:false},
+    {id:3, medicamento:'Amoxicilina', farmacia:'—', estado:'Sin respuesta', distancia:'—', fecha:'26/05/2026', hora:'11:02', selected:false},
+    {id:4, medicamento:'Omeprazol 20mg', farmacia:'Farmacia Prueba', estado:'Sin stock', distancia:'0.8 km', fecha:'26/05/2026', hora:'11:30', selected:false},
+  ];
+  updateStats();
+  renderResumen();
+}
+
+function updateStats() {
+  document.getElementById('s-consultas').textContent = consultas.length;
+  document.getElementById('s-farmacias').textContent = farmacias.filter(f=>f.activa).length;
+  const conStock = consultas.filter(c=>c.estado==='Con stock').length;
+  document.getElementById('s-stock').textContent = consultas.length>0?Math.round((conStock/consultas.length)*100)+'%':'0%';
+  document.getElementById('s-sin').textContent = consultas.filter(c=>c.estado==='Sin respuesta').length;
+  document.getElementById('cons-count').textContent = `${consultas.length} registros`;
+  document.getElementById('farm-count').textContent = `${farmacias.length} farmacias`;
+  document.getElementById('btn-del-cons').disabled = consultas.length < MAX_ANTES_BORRAR;
+}
+
+// ── RENDER RESUMEN ────────────────────────────────────────────
+function renderResumen() {
+  const list = document.getElementById('resumen-list');
+  if(consultas.length===0){list.innerHTML='<div class="empty">Sin actividad todavía.</div>';return;}
+  list.innerHTML = consultas.slice(0,5).map(c=>`
+    <div style="background:var(--white);border:1px solid var(--border);border-radius:10px;padding:10px 14px;margin-bottom:8px;display:flex;align-items:center;gap:10px;font-size:13px">
+      <span style="font-size:18px">💊</span>
+      <div style="flex:1">
+        <div style="font-weight:600">${c.medicamento}</div>
+        <div style="font-size:12px;color:var(--muted)">${c.farmacia} · ${c.fecha} ${c.hora}</div>
+      </div>
+      <span class="tag ${c.estado==='Con stock'?'tag-ok':c.estado==='Sin respuesta'?'tag-active':'tag-no'}">${c.estado}</span>
+    </div>
+  `).join('');
+}
+
+// ── RENDER CONSULTAS ──────────────────────────────────────────
+function renderConsultas() {
+  const tbody = document.getElementById('cons-body');
+  if(consultas.length===0){tbody.innerHTML='<tr><td colspan="7" class="empty">Sin consultas todavía.</td></tr>';return;}
+  tbody.innerHTML = consultas.map((c,i)=>`
+    <tr>
+      <td><input type="checkbox" class="cb" ${c.selected?'checked':''} ${deleteModeCons?'':'disabled'} onchange="toggleSelCons(${i})"/></td>
+      <td><strong>${c.medicamento}</strong></td>
+      <td>${c.farmacia}</td>
+      <td><span class="tag ${c.estado==='Con stock'?'tag-ok':c.estado==='Sin respuesta'?'tag-active':'tag-no'}">${c.estado}</span></td>
+      <td>${c.distancia}</td>
+      <td>${c.fecha}</td>
+      <td>${c.hora}</td>
+    </tr>
+  `).join('');
+  document.getElementById('cons-count').textContent=`${consultas.length} registros`;
+}
+
+// ── RENDER FARMACIAS ──────────────────────────────────────────
+function renderFarmacias() {
+  const list = document.getElementById('farm-list');
+  if(farmacias.length===0){list.innerHTML='<div class="empty">Sin farmacias registradas.</div>';return;}
+  list.innerHTML = farmacias.map(f=>`
+    <div class="farm-card">
+      <div class="farm-avatar">💊</div>
+      <div class="farm-info">
+        <div class="farm-name">${f.nombre}</div>
+        <div class="farm-addr">${f.direccion}</div>
+        <div class="farm-addr">📱 ${f.whatsapp} · 🕐 ${f.horario}</div>
+        <div class="farm-actions">
+          <span class="tag ${f.activa?'tag-ok':'tag-no'}">${f.activa?'Activa':'Inactiva'}</span>
+          <button class="btn-sm" onclick="toggleFarmacia('${f.id}')">${f.activa?'Desactivar':'Activar'}</button>
+          <button class="btn-sm danger" onclick="eliminarFarmacia('${f.id}')">Eliminar</button>
+        </div>
+      </div>
+      <div class="farm-stat"><span>${f.conStock}</span>con stock / ${f.consultas} consultas</div>
+    </div>
+  `).join('');
+  document.getElementById('farm-count').textContent=`${farmacias.length} farmacias`;
+}
+
+function toggleFarmacia(id){const f=farmacias.find(x=>x.id===id);if(f){f.activa=!f.activa;renderFarmacias();showToast(`${f.nombre} ${f.activa?'activada':'desactivada'}`);}}
+function eliminarFarmacia(id){if(!confirm('¿Eliminár esta farmacia?'))return;farmacias=farmacias.filter(f=>f.id!==id);renderFarmacias();updateStats();showToast('Farmacia eliminada');}
+
+// ── DELETE CONSULTAS ──────────────────────────────────────────
+function toggleDeleteCons(){
+  if(consultas.length<MAX_ANTES_BORRAR){showToast(`Podés borrar después de ${MAX_ANTES_BORRAR} consultas`);return;}
+  deleteModeCons=true;renderConsultas();
+  document.getElementById('delete-bar').classList.add('show');
+  document.getElementById('delete-count').textContent='0 seleccionados';
+}
+function toggleSelCons(i){consultas[i].selected=!consultas[i].selected;const n=consultas.filter(c=>c.selected).length;document.getElementById('delete-count').textContent=`${n} seleccionado${n!==1?'s':''}`;}
+function cancelDeleteCons(){deleteModeCons=false;consultas.forEach(c=>c.selected=false);renderConsultas();document.getElementById('delete-bar').classList.remove('show');}
+function confirmDeleteCons(){const antes=consultas.length;consultas=consultas.filter(c=>!c.selected);deleteModeCons=false;renderConsultas();updateStats();document.getElementById('delete-bar').classList.remove('show');showToast(`🗑 ${antes-consultas.length} consulta${antes-consultas.length!==1?'s':''} eliminada${antes-consultas.length!==1?'s':''}`);}
+
+// ── EXPORTS CONSULTAS ─────────────────────────────────────────
+function exportConsultasExcel(){
+  if(consultas.length===0){showToast('No hay datos');return;}
+  const wb=XLSX.utils.book_new();
+  const ws=XLSX.utils.aoa_to_sheet([['Medicamento','Farmacia','Estado','Distancia','Fecha','Hora'],...consultas.map(c=>[c.medicamento,c.farmacia,c.estado,c.distancia,c.fecha,c.hora])]);
+  ws['!cols']=[{wch:22},{wch:20},{wch:14},{wch:10},{wch:12},{wch:8}];
+  XLSX.utils.book_append_sheet(wb,ws,'Consultas');
+  XLSX.writeFile(wb,`farmaya_admin_consultas_${new Date().toLocaleDateString('es-AR').replace(/\//g,'-')}.xlsx`);
+  showToast('✅ Excel descargado');
+}
+function exportConsultasPDF(){
+  if(consultas.length===0){showToast('No hay datos');return;}
+  const rows=consultas.map(c=>`<tr><td>${c.medicamento}</td><td>${c.farmacia}</td><td style="color:${c.estado==='Con stock'?'#2D6A4F':'#6B7280'}">${c.estado}</td><td>${c.distancia}</td><td>${c.fecha}</td><td>${c.hora}</td></tr>`).join('');
+  const html=`<!DOCTYPE html><html><head><meta charset="UTF-8"><style>body{font-family:sans-serif;padding:32px}h1{color:#111827;margin-bottom:4px}p{font-size:12px;color:#6B7280;margin-bottom:20px}table{width:100%;border-collapse:collapse;font-size:12px}th{background:#111827;color:#fff;padding:8px 10px;text-align:left}td{padding:8px 10px;border-bottom:1px solid #E5E7EB}tr:nth-child(even) td{background:#F9FAF8}</style></head><body><h1>FarmaYa — Panel Admin · Consultas</h1><p>Dalma Cersósimo · Exportado el ${new Date().toLocaleDateString('es-AR')}</p><table><thead><tr><th>Medicamento</th><th>Farmacia</th><th>Estado</th><th>Distancia</th><th>Fecha</th><th>Hora</th></tr></thead><tbody>${rows}</tbody></table></body></html>`;
+  const w=window.open('','_blank');w.document.write(html);w.document.close();setTimeout(()=>w.print(),500);
+  showToast('✅ PDF listo');
+}
+
+// ── EXPORTS FARMACIAS ─────────────────────────────────────────
+function exportFarmaciasExcel(){
+  if(farmacias.length===0){showToast('No hay datos');return;}
+  const wb=XLSX.utils.book_new();
+  const ws=XLSX.utils.aoa_to_sheet([['Nombre','Dirección','WhatsApp','Horario','Estado','Consultas','Con Stock'],...farmacias.map(f=>[f.nombre,f.direccion,f.whatsapp,f.horario,f.activa?'Activa':'Inactiva',f.consultas,f.conStock])]);
+  ws['!cols']=[{wch:22},{wch:28},{wch:16},{wch:12},{wch:10},{wch:10},{wch:10}];
+  XLSX.utils.book_append_sheet(wb,ws,'Farmacias');
+  XLSX.writeFile(wb,`farmaya_admin_farmacias_${new Date().toLocaleDateString('es-AR').replace(/\//g,'-')}.xlsx`);
+  showToast('✅ Excel descargado');
+}
+function exportFarmaciasPDF(){
+  if(farmacias.length===0){showToast('No hay datos');return;}
+  const rows=farmacias.map(f=>`<tr><td>${f.nombre}</td><td>${f.direccion}</td><td>${f.whatsapp}</td><td>${f.horario}</td><td style="color:${f.activa?'#2D6A4F':'#6B7280'}">${f.activa?'Activa':'Inactiva'}</td><td>${f.consultas}</td><td>${f.conStock}</td></tr>`).join('');
+  const html=`<!DOCTYPE html><html><head><meta charset="UTF-8"><style>body{font-family:sans-serif;padding:32px}h1{color:#111827;margin-bottom:4px}p{font-size:12px;color:#6B7280;margin-bottom:20px}table{width:100%;border-collapse:collapse;font-size:12px}th{background:#111827;color:#fff;padding:8px 10px;text-align:left}td{padding:8px 10px;border-bottom:1px solid #E5E7EB}tr:nth-child(even) td{background:#F9FAF8}</style></head><body><h1>FarmaYa — Panel Admin · Farmacias</h1><p>Dalma Cersósimo · Exportado el ${new Date().toLocaleDateString('es-AR')}</p><table><thead><tr><th>Nombre</th><th>Dirección</th><th>WhatsApp</th><th>Horario</th><th>Estado</th><th>Consultas</th><th>Con Stock</th></tr></thead><tbody>${rows}</tbody></table></body></html>`;
+  const w=window.open('','_blank');w.document.write(html);w.document.close();setTimeout(()=>w.print(),500);
+  showToast('✅ PDF listo');
+}
+
+function showToast(msg){const t=document.getElementById('toast');t.textContent=msg;t.classList.add('show');setTimeout(()=>t.classList.remove('show'),3000);}
+
+loadDemoData();
+</script>
+</body>
+</html>
