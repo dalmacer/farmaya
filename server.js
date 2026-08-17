@@ -28,8 +28,8 @@ const bot = new TelegramBot(process.env.TELEGRAM_TOKEN, { polling: true });
 
 // ─── BASE DE DATOS EN MEMORIA (reemplazar por DB real en producción) ──────────
 // En producción usar PostgreSQL, MongoDB, Redis, etc.
-const sessions   = new Map();   // sessionId → { medicamento, lat, lng, expira, responses[] }
-const farmacias  = new Map();   // farmaciaId → { nombre, chatId, lat, lng, whatsapp, horario, direccion }
+const sessions   = new Map();   // sessionId → { medicamento, lat, lng, expira, responses[], allResponses[], notificadas[], createdAt }
+const farmacias  = new Map();   // farmaciaId → { nombre, chatId, lat, lng, whatsapp, horario, direccion, activa }
 
 // ─── REGISTRO DE FARMACIAS ────────────────────────────────────────────────────
 // Cada farmacia se registra una sola vez con /start en el bot de Telegram.
@@ -101,11 +101,16 @@ app.post('/query', (req, res) => {
     medicamento, lat, lng,
     expira: expiraTime,
     responses: [],
+    allResponses: [],
+    notificadas: [],
     createdAt: Date.now()
   });
 
   // Buscar farmacias dentro del radio
   const cercanas = getFarmaciasCercanas(lat, lng, radio_km);
+
+  const sessObj = sessions.get(session);
+  sessObj.notificadas = cercanas.map(f => f.id);
 
   if (cercanas.length === 0) {
     return res.json({ ok: true, farmacias_notificadas: 0 });
@@ -143,8 +148,16 @@ function registrarRespuesta(sessionId, farmacia, tieneStock) {
   if (!sess) return;
   if (Date.now() > sess.expira) return; // expirada
 
-  // Evitar duplicados
-  if (sess.responses.find(r => r.farmacia_id === farmacia.id)) return;
+  if (!sess.allResponses) sess.allResponses = [];
+  // Evitar duplicados (una farmacia responde una sola vez por consulta, sea sí o no)
+  if (sess.allResponses.find(r => r.farmacia_id === farmacia.id)) return;
+
+  sess.allResponses.push({
+    farmacia_id: farmacia.id,
+    nombre: farmacia.nombre,
+    tieneStock,
+    respondedAt: Date.now()
+  });
 
   if (tieneStock) {
     sess.responses.push({
@@ -205,6 +218,104 @@ app.get('/farmacia/:id/queries', (req, res) => {
   res.json(activas);
 });
 
+// ─── API: ADMIN — CONSULTAS ───────────────────────────────────────────────────
+app.get('/admin/consultas', (req, res) => {
+  const filas = [];
+
+  sessions.forEach((sess, sessionId) => {
+    const respuestaOk  = (sess.responses && sess.responses[0]) || null;
+    const respuestaAny = (sess.allResponses && sess.allResponses[0]) || null;
+
+    let estado = 'Sin respuesta';
+    let farmaciaNombre = '—';
+    let distancia = '—';
+
+    if (respuestaOk) {
+      estado = 'Con stock';
+      farmaciaNombre = respuestaOk.nombre;
+      distancia = calcDist(sess.lat, sess.lng, respuestaOk.lat, respuestaOk.lng).toFixed(1) + ' km';
+    } else if (respuestaAny) {
+      estado = 'Sin stock';
+      farmaciaNombre = respuestaAny.nombre;
+    }
+
+    const d = new Date(sess.createdAt);
+    filas.push({
+      id: sessionId,
+      medicamento: sess.medicamento,
+      farmacia: farmaciaNombre,
+      estado,
+      distancia,
+      fecha: d.toLocaleDateString('es-AR'),
+      hora: d.toLocaleTimeString('es-AR', { hour: '2-digit', minute: '2-digit' }),
+      _createdAt: sess.createdAt
+    });
+  });
+
+  filas.sort((a, b) => b._createdAt - a._createdAt);
+  filas.forEach(f => delete f._createdAt);
+
+  res.json(filas);
+});
+
+// ─── API: ADMIN — FARMACIAS ───────────────────────────────────────────────────
+app.get('/admin/farmacias', (req, res) => {
+  const filas = Array.from(farmacias.values()).map(f => {
+    let consultasCount = 0;
+    let conStockCount  = 0;
+
+    sessions.forEach(sess => {
+      const fueNotificada = sess.notificadas && sess.notificadas.includes(f.id);
+      if (fueNotificada) {
+        consultasCount++;
+        if (sess.responses && sess.responses.find(r => r.farmacia_id === f.id)) {
+          conStockCount++;
+        }
+      }
+    });
+
+    return {
+      id: f.id,
+      nombre: f.nombre,
+      direccion: f.direccion,
+      whatsapp: f.whatsapp,
+      horario: f.horario,
+      lat: f.lat,
+      lng: f.lng,
+      activa: f.activa,
+      consultas: consultasCount,
+      conStock: conStockCount
+    };
+  });
+
+  res.json(filas);
+});
+
+app.patch('/admin/farmacias/:id', (req, res) => {
+  const f = farmacias.get(req.params.id);
+  if (!f) return res.status(404).json({ error: 'Farmacia no encontrada' });
+
+  if (typeof req.body.activa === 'boolean') {
+    f.activa = req.body.activa;
+  } else {
+    f.activa = !f.activa;
+  }
+
+  res.json({ ok: true, activa: f.activa });
+});
+
+app.delete('/admin/farmacias/:id', (req, res) => {
+  const existed = farmacias.delete(req.params.id);
+  res.json({ ok: existed });
+});
+
+app.delete('/admin/consultas', (req, res) => {
+  const { ids = [] } = req.body;
+  let borradas = 0;
+  ids.forEach(id => { if (sessions.delete(id)) borradas++; });
+  res.json({ ok: true, borradas });
+});
+
 // ─── LIMPIEZA AUTOMÁTICA DE SESIONES EXPIRADAS ───────────────────────────────
 setInterval(() => {
   const now = Date.now();
@@ -246,10 +357,15 @@ app.listen(PORT, () => {
   ╚════════════════════════════════════╝
   
   Endpoints disponibles:
-    POST /query              ← cliente consulta medicamento
-    GET  /responses?session= ← cliente hace polling
-    POST /respond            ← farmacia responde (panel web)
-    GET  /farmacia/:id/queries ← panel farmacia ve consultas
+    POST /query                  ← cliente consulta medicamento
+    GET  /responses?session=     ← cliente hace polling
+    POST /respond                ← farmacia responde (panel web)
+    GET  /farmacia/:id/queries   ← panel farmacia ve consultas
+    GET  /admin/consultas        ← panel admin ve todas las consultas
+    GET  /admin/farmacias        ← panel admin ve todas las farmacias
+    PATCH /admin/farmacias/:id   ← panel admin activa/desactiva farmacia
+    DELETE /admin/farmacias/:id  ← panel admin elimina farmacia
+    DELETE /admin/consultas      ← panel admin borra consultas (body: {ids:[]})
   
   Bot de Telegram activo.
   `);
