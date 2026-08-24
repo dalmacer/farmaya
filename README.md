@@ -1,145 +1,112 @@
-# FarmaYa — Sistema completo
+# FarmaYa — Deploy con Docker
 
-## Arquitectura del sistema
+Este paquete contiene el backend (Node.js + Express + Bot de Telegram) y el
+frontend estático (cliente, panel de farmacia, panel admin) listos para
+levantar con Docker Compose en un VPS.
+
+## ⚠️ Antes de arrancar
+
+- **HTTPS no está resuelto acá.** Este `docker-compose.yml` sirve el
+  frontend por HTTP puro (puerto 80). Si vas a acceder desde un dominio
+  con HTTPS (o si el frontend queda en Netlify y llama a este backend),
+  vas a tener el mismo problema de *mixed content* que veníamos
+  arrastrando. Para resolverlo con este mismo stack, agregá un servicio
+  de `nginx` + `certbot` delante, o usá un proxy como Caddy/Traefik que
+  maneje el certificado automáticamente.
+- **Las sesiones y farmacias viven en memoria** (`Map` en `server.js`).
+  Si reiniciás el contenedor `backend`, se pierden. La integración con
+  Supabase PostgreSQL para persistencia todavía está pendiente.
+
+## Estructura del paquete
 
 ```
-CLIENTE (GPS + búsqueda)
-       │
-       │  POST /query  (medicamento + GPS coords)
-       ▼
-  BACKEND (Node.js)
-       │
-       ├──── Encuentra farmacias en radio 5 km
-       │
-       ├──── Envía mensaje Telegram a cada farmacia:
-       │     "¿Tenés ibuprofeno? /tengo_ABC123 | /notengo_ABC123"
-       │
-       │     O muestra la consulta en el Panel Web de la farmacia
-       │
-       │  Farmacia responde vía Telegram o Panel Web
-       │
-       ▼
-  Backend guarda la respuesta
-
-CLIENTE hace polling cada 5 seg → GET /responses?session=ABC123
-       │
-       ▼
-  Muestra en el mapa las farmacias que confirmaron stock
-  Botón WhatsApp directo a cada farmacia
+farmaya/
+├── server.js              ← backend (Express + Telegram bot)
+├── package.json            ← dependencias del backend
+├── Dockerfile               ← imagen del backend
+├── docker-compose.yml       ← orquesta backend + frontend
+├── .env.example              ← plantilla de variables de entorno
+├── .dockerignore
+├── admin.html               ← panel admin (conectado a /admin/*)
+├── cliente.html             ← app de cliente (consulta medicamentos)
+├── panel-farmacia.html       ← panel de la farmacia (responde consultas)
+└── index.html                ← redirige a cliente.html
 ```
 
----
-
-## Archivos del proyecto
-
-| Archivo | Descripción |
-|---------|-------------|
-| `cliente.html` | App del cliente con GPS real y mapa OpenStreetMap |
-| `panel-farmacia.html` | Panel web para las farmacias |
-| `server.js` | Backend Node.js con bot de Telegram |
-
----
-
-## Instalación del backend
+## 1. Configurar variables de entorno
 
 ```bash
-mkdir farmaya && cd farmaya
-npm init -y
-npm install express cors node-telegram-bot-api dotenv
-
-# Pegar server.js aquí
-# Crear .env:
-echo "TELEGRAM_TOKEN=TU_TOKEN_AQUI" > .env
-echo "PORT=3000" >> .env
-
-node server.js
+cp .env.example .env
 ```
 
----
+Editá `.env` y completá `TELEGRAM_TOKEN` con el token que te dio
+@BotFather en Telegram. El `PORT` podés dejarlo en `3000`.
 
-## Crear el bot de Telegram
+## 2. Levantar los contenedores
 
-1. Abrí Telegram y buscá **@BotFather**
-2. Enviá `/newbot` y seguí los pasos
-3. Copiá el token y pegalo en `.env`
-
----
-
-## Registro de una farmacia
-
-Cada farmacia, **una sola vez**, abre el bot en Telegram y envía:
-
-```
-/start farmacia_del_pueblo|Farmacia Del Pueblo|-38.0055|-57.5426|5492235551234|8:00-22:00|Av. Mitre 342
+```bash
+docker compose up -d --build
 ```
 
-Formato: `/start id|nombre|lat|lng|whatsapp|horario|direccion`
+Esto levanta dos servicios:
 
-A partir de ese momento reciben consultas automáticamente.
+| Servicio   | Puerto | Qué hace |
+|------------|--------|----------|
+| `backend`  | 3000   | API Express + bot de Telegram |
+| `frontend` | 80     | Sirve los `.html` estáticos con nginx |
 
----
+## 3. Verificar que arrancó bien
 
-## Flujo completo
-
-### 1. Cliente busca un medicamento
-- Abre `cliente.html`
-- El GPS detecta su ubicación real
-- Escribe "ibuprofeno" y presiona Consultar
-- El backend notifica a todas las farmacias en 5 km
-
-### 2. Farmacia recibe la consulta
-**Opción A — Telegram:**
-```
-🔔 Nueva consulta de medicamento
-
-💊 Medicamento: Ibuprofeno 400mg
-📍 Distancia: 0.8 km
-⏱ Tiempo para responder: 10 minutos
-
-✅ Si tenés → /tengo_ABC123
-❌ No tenés → /notengo_ABC123
+```bash
+docker compose logs -f backend
 ```
 
-**Opción B — Panel web:**
-- La farmacia abre `panel-farmacia.html`
-- Ve la consulta con el contador regresivo
-- Hace clic en ✓ Tengo stock o ✗ Sin stock
+Deberías ver el bloque de consola con la lista de endpoints
+(`/query`, `/respond`, `/admin/consultas`, etc.) y confirmación de que
+el bot de Telegram está activo.
 
-### 3. Cliente ve las respuestas en tiempo real
-- El mapa se actualiza cada 5 segundos
-- Las farmacias que confirmaron stock aparecen como pins verdes
-- Cada tarjeta tiene el botón **Contactar por WhatsApp**
-- El mensaje pre-escrito ya incluye el medicamento buscado
+## 4. Apuntar el frontend al backend correcto
 
-### 4. Cliente contacta por WhatsApp
-Al pulsar el botón se abre WhatsApp con el mensaje:
-> "Hola! Vi que tienen Ibuprofeno 400mg disponible. ¿Me pueden confirmar precio y si tienen stock ahora?"
+Los tres archivos HTML (`admin.html`, `cliente.html`,
+`panel-farmacia.html`) tienen esta línea:
 
----
-
-## Despliegue recomendado
-
-| Componente | Servicio |
-|------------|---------|
-| Backend Node.js | Railway, Render, o VPS |
-| cliente.html | GitHub Pages, Netlify, o Vercel |
-| panel-farmacia.html | Mismo hosting o Netlify |
-| Bot Telegram | Corre en el mismo servidor Node.js |
-
----
-
-## Variables de entorno
-
-```env
-TELEGRAM_TOKEN=7xxxxxxxxx:AAxxxxxxxxxxxxxxx
-PORT=3000
+```js
+const BACKEND_URL = 'http://2.25.206.209:3000';
 ```
 
----
+Si el VPS donde corre este Docker tiene otra IP o dominio, actualizá
+esa constante en los tres archivos antes de reconstruir la imagen del
+frontend (o antes de copiarlos, si editás directo en el volumen).
 
-## Personalización
+## 5. Registrar una farmacia de prueba
 
-- **Radio de búsqueda:** cambiar `radio_km: 5` en `cliente.html`
-- **Tiempo de expiración:** cambiar `TIMEOUT_MS = 10 * 60 * 1000` en `cliente.html`
-- **Logo/nombre:** cambiar "FarmaYa" en los HTML
-- **Idioma del bot:** editar los mensajes en `server.js`
+Desde Telegram, mandale al bot:
+
+```
+/start farmacia_prueba|Farmacia Prueba|-38.09345|-57.55958|5491168568950|8:00-22:00|Santa Maria de Oro 4519
+```
+
+Esto la guarda en memoria en el backend, lista para recibir consultas.
+
+## Comandos útiles
+
+```bash
+docker compose down              # detener todo
+docker compose restart backend    # reiniciar solo el backend
+docker compose up -d --build backend   # reconstruir solo el backend tras un cambio en server.js
+docker compose logs -f            # ver logs de ambos servicios
+```
+
+## Rutas del backend
+
+```
+POST   /query                  ← cliente consulta medicamento
+GET    /responses?session=     ← cliente hace polling
+POST   /respond                ← farmacia responde (panel web)
+GET    /farmacia/:id/queries   ← panel farmacia ve consultas
+GET    /admin/consultas        ← panel admin ve todas las consultas
+GET    /admin/farmacias        ← panel admin ve todas las farmacias
+PATCH  /admin/farmacias/:id    ← panel admin activa/desactiva farmacia
+DELETE /admin/farmacias/:id    ← panel admin elimina farmacia
+DELETE /admin/consultas        ← panel admin borra consultas (body: {ids:[]})
+```
