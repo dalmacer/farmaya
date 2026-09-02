@@ -60,6 +60,7 @@ bot.onText(/\/start (.+)/, (msg, match) => {
     `📍 Ubicación: ${lat}, ${lng}\n` +
     `📱 WhatsApp: ${whatsapp}\n` +
     `🕐 Horario: ${horario}\n\n` +
+    `Panel web: https://farma-ya.com.ar/panel-farmacia.html?id=${id}\n\n` +
     `Cuando un cliente busque un medicamento cercano, te llegará un mensaje acá.\n` +
     `Respondé con:\n  ✅ /tengo_[sessionId]\n  ❌ /notengo_[sessionId]`,
     { parse_mode: 'Markdown' }
@@ -185,6 +186,24 @@ app.get('/responses', (req, res) => {
   }));
 
   res.json(responses);
+});
+
+// ─── API: PANEL FARMACIA — DATOS PROPIOS DE LA FARMACIA ──────────────────────
+// Usado por panel-farmacia.html?id=XXX para saber quién es y con qué
+// datos (nombre, whatsapp, ubicación) tiene que responder.
+app.get('/farmacia/:id', (req, res) => {
+  const f = farmacias.get(req.params.id);
+  if (!f) return res.status(404).json({ error: 'Farmacia no encontrada' });
+  res.json({
+    id: f.id,
+    nombre: f.nombre,
+    whatsapp: f.whatsapp,
+    horario: f.horario,
+    direccion: f.direccion,
+    lat: f.lat,
+    lng: f.lng,
+    activa: f.activa
+  });
 });
 
 // ─── API: PANEL FARMACIA — VER CONSULTAS ACTIVAS ─────────────────────────────
@@ -360,6 +379,7 @@ app.listen(PORT, () => {
     POST /query                  ← cliente consulta medicamento
     GET  /responses?session=     ← cliente hace polling
     POST /respond                ← farmacia responde (panel web)
+    GET  /farmacia/:id           ← panel farmacia obtiene sus propios datos
     GET  /farmacia/:id/queries   ← panel farmacia ve consultas
     GET  /admin/consultas        ← panel admin ve todas las consultas
     GET  /admin/farmacias        ← panel admin ve todas las farmacias
