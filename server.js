@@ -56,14 +56,13 @@ bot.onText(/\/start (.+)/, (msg, match) => {
     activa: true
   });
   bot.sendMessage(msg.chat.id,
-    `✅ *${nombre}* registrada correctamente.\n\n` +
+    `✅ ${nombre} registrada correctamente.\n\n` +
     `📍 Ubicación: ${lat}, ${lng}\n` +
     `📱 WhatsApp: ${whatsapp}\n` +
     `🕐 Horario: ${horario}\n\n` +
     `Panel web: https://farma-ya.com.ar/panel-farmacia.html?id=${id}\n\n` +
     `Cuando un cliente busque un medicamento cercano, te llegará un mensaje acá.\n` +
-    `Respondé con:\n  ✅ /tengo_[sessionId]\n  ❌ /notengo_[sessionId]`,
-    { parse_mode: 'Markdown' }
+    `Respondé con:\n  ✅ /tengo_[sessionId]\n  ❌ /notengo_[sessionId]`
   );
 });
 
@@ -122,14 +121,13 @@ app.post('/query', (req, res) => {
     const dist = calcDist(lat, lng, f.lat, f.lng).toFixed(1);
     const expiraMin = Math.round((expiraTime - Date.now()) / 60000);
     bot.sendMessage(f.chatId,
-      `🔔 *Nueva consulta de medicamento*\n\n` +
-      `💊 *Medicamento:* ${medicamento}\n` +
-      `📍 *Distancia:* ${dist} km\n` +
-      `⏱ *Tiempo para responder:* ${expiraMin} minutos\n\n` +
+      `🔔 Nueva consulta de medicamento\n\n` +
+      `💊 Medicamento: ${medicamento}\n` +
+      `📍 Distancia: ${dist} km\n` +
+      `⏱ Tiempo para responder: ${expiraMin} minutos\n\n` +
       `¿Tenés este medicamento en stock?\n\n` +
       `✅ Si tenés → /tengo_${session}\n` +
-      `❌ No tenés → /notengo_${session}`,
-      { parse_mode: 'Markdown' }
+      `❌ No tenés → /notengo_${session}`
     ).catch(e => console.error(`Error Telegram farmacia ${f.id}:`, e.message));
   });
 
