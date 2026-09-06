@@ -88,6 +88,10 @@ header{background:var(--green);padding:14px 20px;display:flex;align-items:center
 
 .tab-content{display:none}
 .tab-content.active{display:block}
+
+.setup-error{max-width:420px;margin:60px auto;text-align:center;padding:24px;background:var(--white);border:1px solid var(--border);border-radius:var(--radius)}
+.setup-error h2{color:var(--red);margin-bottom:8px;font-size:16px}
+.setup-error p{color:var(--muted);font-size:13px;line-height:1.5}
 </style>
 </head>
 <body>
@@ -95,43 +99,50 @@ header{background:var(--green);padding:14px 20px;display:flex;align-items:center
 <header>
   <div class="logo">Farma<span>Ya</span> <span style="font-size:11px;font-weight:400;opacity:0.7">Panel</span></div>
   <div style="display:flex;align-items:center;gap:10px">
-    <div class="pharm-badge" id="pharm-badge">💊 Farmacia Prueba</div>
+    <div class="pharm-badge" id="pharm-badge">💊 Cargando...</div>
     <div class="online-dot"></div>
   </div>
 </header>
 
-<div class="tabs">
-  <div class="tab active" onclick="switchTab('consultas')">Consultas activas</div>
-  <div class="tab" onclick="switchTab('historial')">Historial</div>
-</div>
+<div id="app" style="display:none">
+  <div class="tabs">
+    <div class="tab active" onclick="switchTab('consultas')">Consultas activas</div>
+    <div class="tab" onclick="switchTab('historial')">Historial</div>
+  </div>
 
-<!-- TAB CONSULTAS -->
-<div class="tab-content active" id="tab-consultas">
-  <div class="stats">
-    <div class="stat-card"><div class="stat-val" id="stat-hoy">0</div><div class="stat-label">Hoy</div></div>
-    <div class="stat-card"><div class="stat-val" id="stat-resp">0</div><div class="stat-label">Con stock</div></div>
-    <div class="stat-card"><div class="stat-val" id="stat-conv">0%</div><div class="stat-label">Conversión</div></div>
-  </div>
-  <div class="section-header">
-    <span class="section-title">Pendientes</span>
-    <span class="badge none" id="active-badge">0 pendientes</span>
-  </div>
-  <div class="query-list" id="query-list">
-    <div style="text-align:center;padding:30px;color:var(--muted);font-size:13px">No hay consultas activas.</div>
-  </div>
-</div>
-
-<!-- TAB HISTORIAL -->
-<div class="tab-content" id="tab-historial">
-  <div class="hist-section">
-    <div class="hist-toolbar" style="margin-top:16px">
-      <span class="hist-count" id="hist-count">0 registros</span>
-      <button class="hist-btn excel" onclick="exportExcel()">⬇ Excel</button>
-      <button class="hist-btn pdf" onclick="exportPDF()">⬇ PDF</button>
-      <button class="hist-btn del" id="btn-delete" onclick="toggleDeleteMode()" disabled>🗑 Borrar</button>
+  <!-- TAB CONSULTAS -->
+  <div class="tab-content active" id="tab-consultas">
+    <div class="stats">
+      <div class="stat-card"><div class="stat-val" id="stat-hoy">0</div><div class="stat-label">Hoy</div></div>
+      <div class="stat-card"><div class="stat-val" id="stat-resp">0</div><div class="stat-label">Con stock</div></div>
+      <div class="stat-card"><div class="stat-val" id="stat-conv">0%</div><div class="stat-label">Conversión</div></div>
     </div>
-    <div id="hist-list"><div style="text-align:center;padding:30px;color:var(--muted);font-size:13px">Sin historial todavía.</div></div>
+    <div class="section-header">
+      <span class="section-title">Pendientes</span>
+      <span class="badge none" id="active-badge">0 pendientes</span>
+    </div>
+    <div class="query-list" id="query-list">
+      <div style="text-align:center;padding:30px;color:var(--muted);font-size:13px">No hay consultas activas.</div>
+    </div>
   </div>
+
+  <!-- TAB HISTORIAL -->
+  <div class="tab-content" id="tab-historial">
+    <div class="hist-section">
+      <div class="hist-toolbar" style="margin-top:16px">
+        <span class="hist-count" id="hist-count">0 registros</span>
+        <button class="hist-btn excel" onclick="exportExcel()">⬇ Excel</button>
+        <button class="hist-btn pdf" onclick="exportPDF()">⬇ PDF</button>
+        <button class="hist-btn del" id="btn-delete" onclick="toggleDeleteMode()" disabled>🗑 Borrar</button>
+      </div>
+      <div id="hist-list"><div style="text-align:center;padding:30px;color:var(--muted);font-size:13px">Sin historial todavía.</div></div>
+    </div>
+  </div>
+</div>
+
+<div id="setup-error" class="setup-error" style="display:none">
+  <h2>⚠️ Farmacia no identificada</h2>
+  <p id="setup-error-text">Este link no tiene un ID de farmacia válido, o la farmacia no está registrada. Contactá a FarmaYa para obtener tu link personal.</p>
 </div>
 
 <div class="delete-bar" id="delete-bar">
@@ -145,15 +156,44 @@ header{background:var(--green);padding:14px 20px;display:flex;align-items:center
 <div class="toast" id="toast"></div>
 
 <script>
-const BACKEND_URL = 'http://2.25.206.209:3000';
-const FARMACIA_ID = 'farmacia_prueba';
-const FARMACIA_NOMBRE = 'Farmacia Prueba';
-const FARMACIA_WHATSAPP = '5491168568950';
+const BACKEND_URL = '';
 const MAX_ANTES_BORRAR = 10;
 
+// La farmacia se identifica por ?id=xxx en la URL, no por un valor fijo.
+// Ejemplo de link real: https://farma-ya.com.ar/panel-farmacia.html?id=farmacia_centro
+const params = new URLSearchParams(window.location.search);
+const FARMACIA_ID = params.get('id');
+
+let FARMACIA = null; // se completa con fetch a /farmacia/:id
 let queries = [], history = [], timers = {};
 let statsHoy = 0, statsResp = 0;
 let deleteMode = false;
+
+// ── INICIALIZACIÓN ───────────────────────────────────────────
+async function init() {
+  if (!FARMACIA_ID) {
+    showSetupError('Este link no incluye el ID de la farmacia. Pedile a FarmaYa tu link personal (termina en ?id=tu_id).');
+    return;
+  }
+  try {
+    const r = await fetch(`${BACKEND_URL}/farmacia/${FARMACIA_ID}`);
+    if (!r.ok) throw new Error('Farmacia no encontrada');
+    FARMACIA = await r.json();
+  } catch (e) {
+    showSetupError('No encontramos una farmacia registrada con ese ID. Verificá el link o registrate de nuevo por Telegram.');
+    return;
+  }
+  document.getElementById('pharm-badge').textContent = `💊 ${FARMACIA.nombre}`;
+  document.getElementById('app').style.display = 'block';
+  renderQueries();
+  startPolling();
+}
+
+function showSetupError(msg) {
+  document.getElementById('pharm-badge').textContent = '💊 —';
+  document.getElementById('setup-error-text').textContent = msg;
+  document.getElementById('setup-error').style.display = 'block';
+}
 
 // ── TABS ──────────────────────────────────────────────────────
 function switchTab(tab) {
@@ -216,7 +256,18 @@ async function answerQuery(id, tieneStock) {
   if(tieneStock) statsResp++;
   updateStats();
   try {
-    await fetch(`${BACKEND_URL}/respond`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({session:q.session,farmacia_id:FARMACIA_ID,nombre:FARMACIA_NOMBRE,lat:-38.09345,lng:-57.55958,direccion:'Santa Maria de Oro 4519',horario:'8:00-22:00',whatsapp:FARMACIA_WHATSAPP,tiene_stock:tieneStock,medicamento:q.medicamento})});
+    await fetch(`${BACKEND_URL}/respond`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({
+      session:q.session,
+      farmacia_id:FARMACIA_ID,
+      nombre:FARMACIA.nombre,
+      lat:FARMACIA.lat,
+      lng:FARMACIA.lng,
+      direccion:FARMACIA.direccion,
+      horario:FARMACIA.horario,
+      whatsapp:FARMACIA.whatsapp,
+      tiene_stock:tieneStock,
+      medicamento:q.medicamento
+    })});
   } catch(e){}
 }
 
@@ -332,7 +383,7 @@ function exportPDF() {
     tr:nth-child(even) td{background:#F9FAF8}
   </style></head><body>
   <h1>FarmaYa — Historial de consultas</h1>
-  <p>${FARMACIA_NOMBRE} · Exportado el ${new Date().toLocaleDateString('es-AR')}</p>
+  <p>${FARMACIA ? FARMACIA.nombre : ''} · Exportado el ${new Date().toLocaleDateString('es-AR')}</p>
   <table><thead><tr><th>Medicamento</th><th>Distancia</th><th>Estado</th><th>Fecha</th><th>Hora</th></tr></thead>
   <tbody>${rows}</tbody></table>
   </body></html>`;
@@ -378,7 +429,7 @@ function updateStats() {
 function showToast(msg){const t=document.getElementById('toast');t.textContent=msg;t.classList.add('show');setTimeout(()=>t.classList.remove('show'),3000)}
 function playAlert(){try{const c=new AudioContext(),o=c.createOscillator(),g=c.createGain();o.connect(g);g.connect(c.destination);o.frequency.value=880;g.gain.setValueAtTime(0.3,c.currentTime);g.gain.exponentialRampToValueAtTime(0.001,c.currentTime+0.4);o.start();o.stop(c.currentTime+0.4)}catch(e){}}
 
-renderQueries(); startPolling();
+init();
 </script>
 </body>
 </html>
