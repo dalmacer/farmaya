@@ -1,0 +1,179 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>FarmaYa — Sumá tu farmacia</title>
+<link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@300;400;500;600&family=Space+Mono:wght@400;700&display=swap" rel="stylesheet">
+<style>
+:root{
+  --green:#2D6A4F;--green-light:#52B788;--green-pale:#D8F3DC;
+  --red:#DC2626;--red-pale:#FEE2E2;
+  --text:#1B1B1B;--muted:#6B7280;
+  --surface:#F9FAF8;--white:#FFFFFF;--border:#E5E7EB;
+  --radius:14px;--mono:'Space Mono',monospace;--sans:'DM Sans',sans-serif;
+}
+*{box-sizing:border-box;margin:0;padding:0}
+body{font-family:var(--sans);background:var(--surface);color:var(--text);min-height:100vh}
+header{background:var(--green);padding:20px;text-align:center}
+.logo{font-family:var(--mono);color:#fff;font-size:22px;font-weight:700}
+.logo span{color:#74C69D}
+.subtitle{color:rgba(255,255,255,0.85);font-size:13px;margin-top:4px}
+
+.container{max-width:480px;margin:0 auto;padding:24px 20px 60px}
+
+.field{margin-bottom:18px}
+.field label{display:block;font-size:12px;font-weight:600;color:var(--green);text-transform:uppercase;letter-spacing:0.05em;margin-bottom:6px}
+.field input{width:100%;padding:12px 14px;border:1.5px solid var(--border);border-radius:10px;font-family:var(--sans);font-size:15px;color:var(--text);background:var(--white)}
+.field input:focus{outline:none;border-color:var(--green-light)}
+.hint{font-size:11px;color:var(--muted);margin-top:4px}
+
+.gps-box{background:var(--white);border:1.5px dashed var(--border);border-radius:var(--radius);padding:16px;text-align:center;margin-bottom:18px}
+.gps-status{font-size:13px;color:var(--muted);margin-bottom:10px}
+.gps-status.ok{color:var(--green);font-weight:600}
+.gps-btn{background:var(--green);color:#fff;border:none;border-radius:10px;padding:10px 20px;font-family:var(--sans);font-size:14px;font-weight:600;cursor:pointer}
+.gps-btn:hover{background:var(--green-light)}
+.gps-btn:disabled{opacity:0.5;cursor:not-allowed}
+
+.submit-btn{width:100%;background:var(--green);color:#fff;border:none;border-radius:10px;padding:14px;font-family:var(--sans);font-size:15px;font-weight:700;cursor:pointer;margin-top:8px}
+.submit-btn:hover{background:var(--green-light)}
+.submit-btn:disabled{opacity:0.5;cursor:not-allowed}
+
+.error-msg{background:var(--red-pale);color:var(--red);padding:10px 14px;border-radius:10px;font-size:13px;margin-bottom:16px;display:none}
+.error-msg.show{display:block}
+
+.success-box{max-width:420px;margin:60px auto;text-align:center;padding:32px 24px;background:var(--white);border:1px solid var(--border);border-radius:var(--radius)}
+.success-icon{font-size:48px;margin-bottom:12px}
+.success-box h2{color:var(--green);margin-bottom:10px;font-size:18px}
+.success-box p{color:var(--muted);font-size:14px;line-height:1.6}
+</style>
+</head>
+<body>
+
+<header>
+  <div class="logo">Farma<span>Ya</span></div>
+  <div class="subtitle">Sumá tu farmacia a la red</div>
+</header>
+
+<div class="container" id="form-container">
+  <div class="error-msg" id="error-msg"></div>
+
+  <div class="field">
+    <label>Nombre de la farmacia</label>
+    <input type="text" id="nombre" placeholder="ej: Farmacia Central" />
+  </div>
+
+  <div class="field">
+    <label>Dirección</label>
+    <input type="text" id="direccion" placeholder="ej: Av. Mitre 342" />
+  </div>
+
+  <div class="field">
+    <label>WhatsApp (con código de país, sin espacios)</label>
+    <input type="text" id="whatsapp" placeholder="ej: 5491122334455" />
+  </div>
+
+  <div class="field">
+    <label>Horario de atención</label>
+    <input type="text" id="horario" placeholder="ej: 8:00-22:00" />
+  </div>
+
+  <div class="gps-box">
+    <div class="gps-status" id="gps-status">📍 Necesitamos tu ubicación para que los clientes te encuentren cerca</div>
+    <button class="gps-btn" id="gps-btn" onclick="usarUbicacion()">Usar mi ubicación</button>
+  </div>
+
+  <button class="submit-btn" id="submit-btn" onclick="enviarRegistro()" disabled>Registrar mi farmacia</button>
+</div>
+
+<div class="success-box" id="success-box" style="display:none">
+  <div class="success-icon">✅</div>
+  <h2>¡Listo! Tu farmacia quedó registrada</h2>
+  <p>
+    Tu solicitud está pendiente de aprobación. En cuanto el equipo de FarmaYa
+    la revise, vas a poder empezar a recibir consultas de clientes cerca tuyo.
+  </p>
+</div>
+
+<script>
+const BACKEND_URL = '';
+let userLat = null, userLng = null;
+
+function usarUbicacion() {
+  const status = document.getElementById('gps-status');
+  const btn = document.getElementById('gps-btn');
+  if (!navigator.geolocation) {
+    status.textContent = '❌ Tu navegador no soporta geolocalización.';
+    return;
+  }
+  btn.disabled = true;
+  status.textContent = '📍 Buscando tu ubicación...';
+  navigator.geolocation.getCurrentPosition(
+    pos => {
+      userLat = pos.coords.latitude;
+      userLng = pos.coords.longitude;
+      status.textContent = '✅ Ubicación obtenida correctamente';
+      status.className = 'gps-status ok';
+      btn.textContent = 'Actualizar ubicación';
+      btn.disabled = false;
+      checkFormValid();
+    },
+    () => {
+      status.textContent = '❌ No pudimos obtener tu ubicación. Revisá los permisos del navegador e intentá de nuevo.';
+      btn.disabled = false;
+    },
+    { enableHighAccuracy: true, timeout: 10000 }
+  );
+}
+
+function checkFormValid() {
+  const nombre = document.getElementById('nombre').value.trim();
+  const whatsapp = document.getElementById('whatsapp').value.trim();
+  const ok = nombre && whatsapp && userLat !== null && userLng !== null;
+  document.getElementById('submit-btn').disabled = !ok;
+}
+
+['nombre','direccion','whatsapp','horario'].forEach(id => {
+  document.getElementById(id).addEventListener('input', checkFormValid);
+});
+
+function showError(msg) {
+  const el = document.getElementById('error-msg');
+  el.textContent = msg;
+  el.classList.add('show');
+}
+
+async function enviarRegistro() {
+  const nombre = document.getElementById('nombre').value.trim();
+  const direccion = document.getElementById('direccion').value.trim();
+  const whatsapp = document.getElementById('whatsapp').value.trim();
+  const horario = document.getElementById('horario').value.trim();
+
+  if (!nombre || !whatsapp || userLat === null || userLng === null) {
+    showError('Completá el nombre, el WhatsApp y tu ubicación antes de enviar.');
+    return;
+  }
+
+  const btn = document.getElementById('submit-btn');
+  btn.disabled = true;
+  btn.textContent = 'Enviando...';
+
+  try {
+    const res = await fetch(`${BACKEND_URL}/registro`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ nombre, direccion, whatsapp, horario, lat: userLat, lng: userLng })
+    });
+    if (!res.ok) throw new Error('No se pudo registrar');
+
+    document.getElementById('form-container').style.display = 'none';
+    document.getElementById('success-box').style.display = 'block';
+  } catch (e) {
+    showError('Hubo un problema al registrar tu farmacia. Intentá de nuevo en unos minutos.');
+    btn.disabled = false;
+    btn.textContent = 'Registrar mi farmacia';
+  }
+}
+</script>
+</body>
+</html>
