@@ -2,44 +2,44 @@
  * ╔═══════════════════════════════════════════════════════════╗
  * ║         FarmaYa — Backend Server (Node.js + Express)     ║
  * ║  Conecta: App cliente ↔ Backend ↔ Telegram Bot ↔ Farmacia ║
+ * ║  Persistencia: Supabase (PostgreSQL)                      ║
  * ╚═══════════════════════════════════════════════════════════╝
  *
  * INSTALACIÓN:
- *   npm install express cors node-telegram-bot-api
+ *   npm install
  *
  * VARIABLES DE ENTORNO (.env):
  *   TELEGRAM_TOKEN=7xxxxxxxxx:AAxxxxxxxxxxxxxxx   ← BotFather
  *   PORT=3000
+ *   SUPABASE_URL=https://xxxxxxxx.supabase.co
+ *   SUPABASE_KEY=xxxxxxxx  (service_role / secret key)
  *
  * ARRANCAR:
  *   node server.js
  */
 
 require('dotenv').config();
-const express    = require('express');
-const cors       = require('cors');
+const express     = require('express');
+const cors        = require('cors');
 const TelegramBot = require('node-telegram-bot-api');
+const { createClient } = require('@supabase/supabase-js');
 
 const app = express();
 app.use(cors());
 app.use(express.json());
 
 const bot = new TelegramBot(process.env.TELEGRAM_TOKEN, { polling: true });
+const supabase = createClient(process.env.SUPABASE_URL, process.env.SUPABASE_KEY);
 
-// ─── BASE DE DATOS EN MEMORIA (reemplazar por DB real en producción) ──────────
-// En producción usar PostgreSQL, MongoDB, Redis, etc.
-const sessions   = new Map();   // sessionId → { medicamento, lat, lng, expira, responses[], allResponses[], notificadas[], createdAt }
-const farmacias  = new Map();   // farmaciaId → { nombre, chatId, lat, lng, whatsapp, horario, direccion, activa }
-
-// ─── REGISTRO DE FARMACIAS ────────────────────────────────────────────────────
+// ─── REGISTRO DE FARMACIAS POR TELEGRAM ───────────────────────────────────────
 // Cada farmacia se registra una sola vez con /start en el bot de Telegram.
 // El chatId de Telegram queda guardado y el backend le manda mensajes cuando
-// hay una consulta cercana.
+// hay una consulta cercana. Estas quedan activas automáticamente.
 //
 // Formato de registro vía Telegram:
 //   /start farmacia_id|Nombre Farmacia|-38.005|-57.542|5492235551234|8:00-22:00|Av. Mitre 342
 //
-bot.onText(/\/start (.+)/, (msg, match) => {
+bot.onText(/\/start (.+)/, async (msg, match) => {
   const parts = match[1].split('|');
   if (parts.length < 7) {
     bot.sendMessage(msg.chat.id,
@@ -47,14 +47,23 @@ bot.onText(/\/start (.+)/, (msg, match) => {
     return;
   }
   const [id, nombre, lat, lng, whatsapp, horario, direccion] = parts;
-  farmacias.set(id, {
-    id, nombre,
+
+  const { error } = await supabase.from('farmacias').upsert({
+    id,
+    nombre,
     lat: parseFloat(lat),
     lng: parseFloat(lng),
     whatsapp, horario, direccion,
-    chatId: msg.chat.id,
+    chat_id: msg.chat.id,
     activa: true
   });
+
+  if (error) {
+    console.error('Error registrando farmacia:', error.message);
+    bot.sendMessage(msg.chat.id, '❌ Hubo un error guardando el registro. Intentá de nuevo.');
+    return;
+  }
+
   bot.sendMessage(msg.chat.id,
     `✅ ${nombre} registrada correctamente.\n\n` +
     `📍 Ubicación: ${lat}, ${lng}\n` +
@@ -67,60 +76,95 @@ bot.onText(/\/start (.+)/, (msg, match) => {
 });
 
 // ─── RESPUESTA POR TELEGRAM ────────────────────────────────────────────────────
-bot.onText(/\/tengo_(\w+)/, (msg, match) => {
+bot.onText(/\/tengo_(\w+)/, async (msg, match) => {
   const sessionId = match[1];
-  const farmacia  = getFarmaciaByChat(msg.chat.id);
+  const farmacia  = await getFarmaciaByChat(msg.chat.id);
   if (!farmacia) { bot.sendMessage(msg.chat.id, '❌ Farmacia no registrada.'); return; }
-  registrarRespuesta(sessionId, farmacia, true);
+  await registrarRespuesta(sessionId, farmacia, true);
   bot.sendMessage(msg.chat.id, `✅ Confirmado. El cliente ya puede ver que tienen el medicamento y contactarte por WhatsApp.`);
 });
 
-bot.onText(/\/notengo_(\w+)/, (msg, match) => {
+bot.onText(/\/notengo_(\w+)/, async (msg, match) => {
   const sessionId = match[1];
-  const farmacia  = getFarmaciaByChat(msg.chat.id);
+  const farmacia  = await getFarmaciaByChat(msg.chat.id);
   if (!farmacia) { bot.sendMessage(msg.chat.id, '❌ Farmacia no registrada.'); return; }
-  registrarRespuesta(sessionId, farmacia, false);
+  await registrarRespuesta(sessionId, farmacia, false);
   bot.sendMessage(msg.chat.id, `👍 Entendido. El cliente no verá tu farmacia para esta consulta.`);
 });
 
-function getFarmaciaByChat(chatId) {
-  for (const f of farmacias.values()) {
-    if (f.chatId === chatId) return f;
+async function getFarmaciaByChat(chatId) {
+  const { data } = await supabase.from('farmacias').select('*').eq('chat_id', chatId).maybeSingle();
+  return data || null;
+}
+
+// ─── API: FARMACIA SE AUTO-REGISTRA POR FORMULARIO WEB ───────────────────────
+// Queda inactiva (pendiente) hasta que el admin la apruebe desde admin.html.
+app.post('/registro', async (req, res) => {
+  const { nombre, direccion, whatsapp, horario, lat, lng } = req.body;
+  if (!nombre || !whatsapp || lat === undefined || lng === undefined) {
+    return res.status(400).json({ error: 'Faltan campos obligatorios' });
   }
-  return null;
+
+  const base = slugify(nombre) || 'farmacia';
+  const id = `${base}_${Math.random().toString(36).slice(2, 7)}`;
+
+  const { error } = await supabase.from('farmacias').insert({
+    id,
+    nombre,
+    direccion: direccion || '',
+    whatsapp,
+    horario: horario || '',
+    lat, lng,
+    activa: false
+  });
+
+  if (error) {
+    console.error('Error en auto-registro:', error.message);
+    return res.status(500).json({ error: 'No se pudo registrar la farmacia' });
+  }
+
+  res.json({ ok: true, id });
+});
+
+function slugify(text) {
+  return text.toString().toLowerCase()
+    .normalize('NFD').replace(/[\u0300-\u036f]/g, '') // quitar acentos
+    .replace(/[^a-z0-9]+/g, '_')
+    .replace(/^_+|_+$/g, '');
 }
 
 // ─── API: CLIENTE ENVÍA CONSULTA ──────────────────────────────────────────────
-app.post('/query', (req, res) => {
+app.post('/query', async (req, res) => {
   const { session, medicamento, lat, lng, radio_km = 5, expira } = req.body;
   if (!session || !medicamento) return res.status(400).json({ error: 'Faltan campos' });
 
-  const expiraTime = expira ? new Date(expira).getTime() : Date.now() + 10 * 60 * 1000;
+  const expiraTime = expira ? new Date(expira) : new Date(Date.now() + 10 * 60 * 1000);
 
-  sessions.set(session, {
+  const cercanas = await getFarmaciasCercanas(lat, lng, radio_km);
+  const notificadas = cercanas.map(f => f.id);
+
+  const { error } = await supabase.from('sesiones').insert({
+    id: session,
     medicamento, lat, lng,
-    expira: expiraTime,
-    responses: [],
-    allResponses: [],
-    notificadas: [],
-    createdAt: Date.now()
+    expira: expiraTime.toISOString(),
+    notificadas
   });
 
-  // Buscar farmacias dentro del radio
-  const cercanas = getFarmaciasCercanas(lat, lng, radio_km);
-
-  const sessObj = sessions.get(session);
-  sessObj.notificadas = cercanas.map(f => f.id);
+  if (error) {
+    console.error('Error guardando consulta:', error.message);
+    return res.status(500).json({ error: 'No se pudo guardar la consulta' });
+  }
 
   if (cercanas.length === 0) {
     return res.json({ ok: true, farmacias_notificadas: 0 });
   }
 
-  // Notificar por Telegram a cada farmacia cercana
+  // Notificar por Telegram solo a las farmacias que tienen chat vinculado
   cercanas.forEach(f => {
+    if (!f.chat_id) return;
     const dist = calcDist(lat, lng, f.lat, f.lng).toFixed(1);
-    const expiraMin = Math.round((expiraTime - Date.now()) / 60000);
-    bot.sendMessage(f.chatId,
+    const expiraMin = Math.round((expiraTime.getTime() - Date.now()) / 60000);
+    bot.sendMessage(f.chat_id,
       `🔔 Nueva consulta de medicamento\n\n` +
       `💊 Medicamento: ${medicamento}\n` +
       `📍 Distancia: ${dist} km\n` +
@@ -135,161 +179,164 @@ app.post('/query', (req, res) => {
 });
 
 // ─── API: FARMACIA RESPONDE VÍA PANEL WEB ────────────────────────────────────
-app.post('/respond', (req, res) => {
+app.post('/respond', async (req, res) => {
   const { session, farmacia_id, tiene_stock } = req.body;
-  const farmacia = farmacias.get(farmacia_id) || req.body; // acepta datos inline del panel
-  registrarRespuesta(session, farmacia, tiene_stock);
+
+  const { data: farmaciaDb } = await supabase.from('farmacias').select('*').eq('id', farmacia_id).maybeSingle();
+  const farmacia = farmaciaDb || req.body;
+
+  await registrarRespuesta(session, farmacia, tiene_stock);
   res.json({ ok: true });
 });
 
-function registrarRespuesta(sessionId, farmacia, tieneStock) {
-  const sess = sessions.get(sessionId);
+async function registrarRespuesta(sessionId, farmacia, tieneStock) {
+  const { data: sess } = await supabase.from('sesiones').select('expira').eq('id', sessionId).maybeSingle();
   if (!sess) return;
-  if (Date.now() > sess.expira) return; // expirada
+  if (new Date(sess.expira).getTime() < Date.now()) return; // expirada
 
-  if (!sess.allResponses) sess.allResponses = [];
-  // Evitar duplicados (una farmacia responde una sola vez por consulta, sea sí o no)
-  if (sess.allResponses.find(r => r.farmacia_id === farmacia.id)) return;
-
-  sess.allResponses.push({
+  const { error } = await supabase.from('respuestas').insert({
+    session_id: sessionId,
     farmacia_id: farmacia.id,
-    nombre: farmacia.nombre,
-    tieneStock,
-    respondedAt: Date.now()
+    tiene_stock: tieneStock
   });
 
-  if (tieneStock) {
-    sess.responses.push({
-      farmacia_id: farmacia.id,
-      nombre:      farmacia.nombre,
-      lat:         farmacia.lat,
-      lng:         farmacia.lng,
-      direccion:   farmacia.direccion,
-      horario:     farmacia.horario,
-      whatsapp:    farmacia.whatsapp,
-      respondedAt: Date.now()
-    });
+  // Código 23505 = ya existía una respuesta de esta farmacia para esta sesión (evitar duplicados)
+  if (error && error.code !== '23505') {
+    console.error('Error registrando respuesta:', error.message);
   }
 }
 
 // ─── API: CLIENTE HACE POLLING ────────────────────────────────────────────────
-app.get('/responses', (req, res) => {
+app.get('/responses', async (req, res) => {
   const { session } = req.query;
-  const sess = sessions.get(session);
-  if (!sess) return res.json([]);
 
-  const responses = sess.responses.map(r => ({
-    ...r,
-    hace: timeAgo(r.respondedAt)
-  }));
+  const { data, error } = await supabase
+    .from('respuestas')
+    .select('farmacia_id, responded_at, farmacias ( nombre, lat, lng, direccion, horario, whatsapp )')
+    .eq('session_id', session)
+    .eq('tiene_stock', true)
+    .order('responded_at', { ascending: true });
+
+  if (error || !data) return res.json([]);
+
+  const responses = data
+    .filter(r => r.farmacias)
+    .map(r => ({
+      farmacia_id: r.farmacia_id,
+      nombre: r.farmacias.nombre,
+      lat: r.farmacias.lat,
+      lng: r.farmacias.lng,
+      direccion: r.farmacias.direccion,
+      horario: r.farmacias.horario,
+      whatsapp: r.farmacias.whatsapp,
+      hace: timeAgo(new Date(r.responded_at).getTime())
+    }));
 
   res.json(responses);
 });
 
 // ─── API: PANEL FARMACIA — DATOS PROPIOS DE LA FARMACIA ──────────────────────
-// Usado por panel-farmacia.html?id=XXX para saber quién es y con qué
-// datos (nombre, whatsapp, ubicación) tiene que responder.
-app.get('/farmacia/:id', (req, res) => {
-  const f = farmacias.get(req.params.id);
-  if (!f) return res.status(404).json({ error: 'Farmacia no encontrada' });
+app.get('/farmacia/:id', async (req, res) => {
+  const { data, error } = await supabase.from('farmacias').select('*').eq('id', req.params.id).maybeSingle();
+  if (error || !data) return res.status(404).json({ error: 'Farmacia no encontrada' });
   res.json({
-    id: f.id,
-    nombre: f.nombre,
-    whatsapp: f.whatsapp,
-    horario: f.horario,
-    direccion: f.direccion,
-    lat: f.lat,
-    lng: f.lng,
-    activa: f.activa
+    id: data.id,
+    nombre: data.nombre,
+    whatsapp: data.whatsapp,
+    horario: data.horario,
+    direccion: data.direccion,
+    lat: data.lat,
+    lng: data.lng,
+    activa: data.activa
   });
 });
 
 // ─── API: PANEL FARMACIA — VER CONSULTAS ACTIVAS ─────────────────────────────
-app.get('/farmacia/:id/queries', (req, res) => {
+app.get('/farmacia/:id/queries', async (req, res) => {
   const farmaciaId = req.params.id;
-  const farmacia   = farmacias.get(farmaciaId);
+  const { data: farmacia } = await supabase.from('farmacias').select('*').eq('id', farmaciaId).maybeSingle();
   if (!farmacia) return res.json([]);
 
-  const now = Date.now();
-  const activas = [];
+  const nowIso = new Date().toISOString();
+  const { data: sesionesActivas } = await supabase.from('sesiones').select('*').gt('expira', nowIso);
+  if (!sesionesActivas) return res.json([]);
 
-  sessions.forEach((sess, sessionId) => {
-    if (sess.expira < now) return; // expirada
-    // verificar si es cercana
-    const dist = calcDist(sess.lat, sess.lng, farmacia.lat, farmacia.lng);
-    if (dist > 5) return; // fuera de radio
-    // verificar si ya respondió
-    const yaRespondio = sess.responses.find(r => r.farmacia_id === farmaciaId);
+  const { data: respondidas } = await supabase
+    .from('respuestas')
+    .select('session_id')
+    .eq('farmacia_id', farmaciaId);
+  const respondidasSet = new Set((respondidas || []).map(r => r.session_id));
 
-    activas.push({
-      id: sessionId,
-      session: sessionId,
+  const activas = sesionesActivas
+    .map(sess => ({ sess, dist: calcDist(sess.lat, sess.lng, farmacia.lat, farmacia.lng) }))
+    .filter(({ dist }) => dist <= 5)
+    .map(({ sess, dist }) => ({
+      id: sess.id,
+      session: sess.id,
       medicamento: sess.medicamento,
       distancia: dist.toFixed(1) + ' km',
-      expira: new Date(sess.expira).toISOString(),
-      hace: timeAgo(sess.createdAt),
-      respondida: !!yaRespondio
-    });
-  });
+      expira: sess.expira,
+      hace: timeAgo(new Date(sess.created_at).getTime()),
+      respondida: respondidasSet.has(sess.id)
+    }));
 
   res.json(activas);
 });
 
 // ─── API: ADMIN — CONSULTAS ───────────────────────────────────────────────────
-app.get('/admin/consultas', (req, res) => {
-  const filas = [];
+app.get('/admin/consultas', async (req, res) => {
+  const { data: sesiones } = await supabase.from('sesiones').select('*').order('created_at', { ascending: false });
+  if (!sesiones) return res.json([]);
 
-  sessions.forEach((sess, sessionId) => {
-    const respuestaOk  = (sess.responses && sess.responses[0]) || null;
-    const respuestaAny = (sess.allResponses && sess.allResponses[0]) || null;
+  const { data: respuestas } = await supabase
+    .from('respuestas')
+    .select('session_id, tiene_stock, farmacias ( nombre, lat, lng )');
 
-    let estado = 'Sin respuesta';
-    let farmaciaNombre = '—';
-    let distancia = '—';
+  const porSesion = {};
+  (respuestas || []).forEach(r => {
+    if (!porSesion[r.session_id]) porSesion[r.session_id] = [];
+    porSesion[r.session_id].push(r);
+  });
 
-    if (respuestaOk) {
+  const filas = sesiones.map(sess => {
+    const resp = porSesion[sess.id] || [];
+    const conStock  = resp.find(r => r.tiene_stock && r.farmacias);
+    const cualquiera = resp.find(r => r.farmacias);
+
+    let estado = 'Sin respuesta', farmaciaNombre = '—', distancia = '—';
+    if (conStock) {
       estado = 'Con stock';
-      farmaciaNombre = respuestaOk.nombre;
-      distancia = calcDist(sess.lat, sess.lng, respuestaOk.lat, respuestaOk.lng).toFixed(1) + ' km';
-    } else if (respuestaAny) {
+      farmaciaNombre = conStock.farmacias.nombre;
+      distancia = calcDist(sess.lat, sess.lng, conStock.farmacias.lat, conStock.farmacias.lng).toFixed(1) + ' km';
+    } else if (cualquiera) {
       estado = 'Sin stock';
-      farmaciaNombre = respuestaAny.nombre;
+      farmaciaNombre = cualquiera.farmacias.nombre;
     }
 
-    const d = new Date(sess.createdAt);
-    filas.push({
-      id: sessionId,
+    const d = new Date(sess.created_at);
+    return {
+      id: sess.id,
       medicamento: sess.medicamento,
       farmacia: farmaciaNombre,
       estado,
       distancia,
       fecha: d.toLocaleDateString('es-AR'),
-      hora: d.toLocaleTimeString('es-AR', { hour: '2-digit', minute: '2-digit' }),
-      _createdAt: sess.createdAt
-    });
+      hora: d.toLocaleTimeString('es-AR', { hour: '2-digit', minute: '2-digit' })
+    };
   });
-
-  filas.sort((a, b) => b._createdAt - a._createdAt);
-  filas.forEach(f => delete f._createdAt);
 
   res.json(filas);
 });
 
 // ─── API: ADMIN — FARMACIAS ───────────────────────────────────────────────────
-app.get('/admin/farmacias', (req, res) => {
-  const filas = Array.from(farmacias.values()).map(f => {
-    let consultasCount = 0;
-    let conStockCount  = 0;
+app.get('/admin/farmacias', async (req, res) => {
+  const { data: farmacias } = await supabase.from('farmacias').select('*').order('created_at', { ascending: false });
+  const { data: sesiones }  = await supabase.from('sesiones').select('id, notificadas');
+  const { data: respuestas } = await supabase.from('respuestas').select('farmacia_id, tiene_stock');
 
-    sessions.forEach(sess => {
-      const fueNotificada = sess.notificadas && sess.notificadas.includes(f.id);
-      if (fueNotificada) {
-        consultasCount++;
-        if (sess.responses && sess.responses.find(r => r.farmacia_id === f.id)) {
-          conStockCount++;
-        }
-      }
-    });
+  const filas = (farmacias || []).map(f => {
+    const consultasCount = (sesiones || []).filter(s => (s.notificadas || []).includes(f.id)).length;
+    const conStockCount  = (respuestas || []).filter(r => r.farmacia_id === f.id && r.tiene_stock).length;
 
     return {
       id: f.id,
@@ -308,46 +355,41 @@ app.get('/admin/farmacias', (req, res) => {
   res.json(filas);
 });
 
-app.patch('/admin/farmacias/:id', (req, res) => {
-  const f = farmacias.get(req.params.id);
-  if (!f) return res.status(404).json({ error: 'Farmacia no encontrada' });
+app.patch('/admin/farmacias/:id', async (req, res) => {
+  const { data: actual } = await supabase.from('farmacias').select('activa').eq('id', req.params.id).maybeSingle();
+  if (!actual) return res.status(404).json({ error: 'Farmacia no encontrada' });
 
-  if (typeof req.body.activa === 'boolean') {
-    f.activa = req.body.activa;
-  } else {
-    f.activa = !f.activa;
-  }
+  const nuevoValor = typeof req.body.activa === 'boolean' ? req.body.activa : !actual.activa;
+  const { error } = await supabase.from('farmacias').update({ activa: nuevoValor }).eq('id', req.params.id);
+  if (error) return res.status(500).json({ error: error.message });
 
-  res.json({ ok: true, activa: f.activa });
+  res.json({ ok: true, activa: nuevoValor });
 });
 
-app.delete('/admin/farmacias/:id', (req, res) => {
-  const existed = farmacias.delete(req.params.id);
-  res.json({ ok: existed });
+app.delete('/admin/farmacias/:id', async (req, res) => {
+  const { error } = await supabase.from('farmacias').delete().eq('id', req.params.id);
+  res.json({ ok: !error });
 });
 
-app.delete('/admin/consultas', (req, res) => {
+app.delete('/admin/consultas', async (req, res) => {
   const { ids = [] } = req.body;
-  let borradas = 0;
-  ids.forEach(id => { if (sessions.delete(id)) borradas++; });
-  res.json({ ok: true, borradas });
+  if (ids.length === 0) return res.json({ ok: true, borradas: 0 });
+  const { error, count } = await supabase.from('sesiones').delete({ count: 'exact' }).in('id', ids);
+  res.json({ ok: !error, borradas: count || 0 });
 });
 
 // ─── LIMPIEZA AUTOMÁTICA DE SESIONES EXPIRADAS ───────────────────────────────
-setInterval(() => {
-  const now = Date.now();
-  for (const [id, sess] of sessions.entries()) {
-    if (now > sess.expira + 60 * 60 * 1000) { // 1h después de expirar
-      sessions.delete(id);
-    }
-  }
+setInterval(async () => {
+  const cutoff = new Date(Date.now() - 60 * 60 * 1000).toISOString();
+  const { error } = await supabase.from('sesiones').delete().lt('expira', cutoff);
+  if (error) console.error('Error en limpieza automática:', error.message);
 }, 5 * 60 * 1000);
 
 // ─── UTILS ───────────────────────────────────────────────────────────────────
-function getFarmaciasCercanas(lat, lng, radioKm) {
-  return Array.from(farmacias.values()).filter(f => {
-    return f.activa && calcDist(lat, lng, f.lat, f.lng) <= radioKm;
-  });
+async function getFarmaciasCercanas(lat, lng, radioKm) {
+  const { data, error } = await supabase.from('farmacias').select('*').eq('activa', true);
+  if (error || !data) return [];
+  return data.filter(f => calcDist(lat, lng, f.lat, f.lng) <= radioKm);
 }
 
 function calcDist(lat1, lng1, lat2, lng2) {
@@ -373,10 +415,13 @@ app.listen(PORT, () => {
   ║  FarmaYa Backend corriendo en :${PORT}  ║
   ╚════════════════════════════════════╝
   
+  Persistencia: Supabase (${process.env.SUPABASE_URL ? 'conectado' : '⚠️ SIN CONFIGURAR'})
+  
   Endpoints disponibles:
     POST /query                  ← cliente consulta medicamento
     GET  /responses?session=     ← cliente hace polling
     POST /respond                ← farmacia responde (panel web)
+    POST /registro                ← farmacia se auto-registra (queda pendiente)
     GET  /farmacia/:id           ← panel farmacia obtiene sus propios datos
     GET  /farmacia/:id/queries   ← panel farmacia ve consultas
     GET  /admin/consultas        ← panel admin ve todas las consultas
