@@ -24,6 +24,10 @@ const cors        = require('cors');
 const TelegramBot = require('node-telegram-bot-api');
 const { createClient } = require('@supabase/supabase-js');
 
+// Node.js 20 no trae WebSocket nativo; la librería de Supabase lo necesita
+// aunque no usemos su función de "realtime". Este polyfill lo soluciona.
+global.WebSocket = require('ws');
+
 const app = express();
 app.use(cors());
 app.use(express.json());
