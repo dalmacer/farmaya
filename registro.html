@@ -93,6 +93,19 @@ header{background:var(--green);padding:20px;text-align:center}
     Tu solicitud está pendiente de aprobación. En cuanto el equipo de FarmaYa
     la revise, vas a poder empezar a recibir consultas de clientes cerca tuyo.
   </p>
+
+  <div id="panel-box" style="display:none;margin-top:22px;text-align:left;background:#F0FFF4;border:1px solid #B7E4C7;border-radius:12px;padding:14px">
+    <p style="font-size:12px;margin-bottom:6px"><b>Guardá este link:</b> es tu panel personal para ver y responder consultas.</p>
+    <p style="font-size:12px;word-break:break-all"><a id="panel-link" href="#"></a></p>
+  </div>
+
+  <div id="telegram-box" style="display:none;margin-top:18px">
+    <p style="font-size:13px;margin-bottom:10px">Para enterarte de las consultas en tu celular, vinculá tu Telegram con un solo toque:</p>
+    <a id="telegram-link" href="#" target="_blank" rel="noopener"
+       style="display:inline-block;background:#0284C7;color:#fff;text-decoration:none;padding:12px 22px;border-radius:10px;font-weight:600;font-size:14px">
+      Vincular mi Telegram
+    </a>
+  </div>
 </div>
 
 <script>
@@ -165,6 +178,18 @@ async function enviarRegistro() {
       body: JSON.stringify({ nombre, direccion, whatsapp, horario, lat: userLat, lng: userLng })
     });
     if (!res.ok) throw new Error('No se pudo registrar');
+    const data = await res.json();
+
+    if (data.id) {
+      const panelUrl = `${location.origin}/panel-farmacia.html?id=${data.id}`;
+      const a = document.getElementById('panel-link');
+      a.href = panelUrl; a.textContent = panelUrl;
+      document.getElementById('panel-box').style.display = 'block';
+    }
+    if (data.telegram_link) {
+      document.getElementById('telegram-link').href = data.telegram_link;
+      document.getElementById('telegram-box').style.display = 'block';
+    }
 
     document.getElementById('form-container').style.display = 'none';
     document.getElementById('success-box').style.display = 'block';
