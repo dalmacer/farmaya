@@ -89,6 +89,8 @@ header{background:var(--green);padding:14px 20px;display:flex;align-items:center
 .tab-content{display:none}
 .tab-content.active{display:block}
 
+.tg-banner{display:none;align-items:center;justify-content:space-between;gap:12px;background:#E0F2FE;border:1px solid #BAE6FD;color:#075985;padding:12px 16px;margin:12px 20px 0;border-radius:12px;font-size:13px}
+.tg-banner a{background:#0284C7;color:#fff;text-decoration:none;padding:8px 14px;border-radius:100px;font-weight:600;white-space:nowrap;font-size:12px}
 .setup-error{max-width:420px;margin:60px auto;text-align:center;padding:24px;background:var(--white);border:1px solid var(--border);border-radius:var(--radius)}
 .setup-error h2{color:var(--red);margin-bottom:8px;font-size:16px}
 .setup-error p{color:var(--muted);font-size:13px;line-height:1.5}
@@ -105,6 +107,10 @@ header{background:var(--green);padding:14px 20px;display:flex;align-items:center
 </header>
 
 <div id="app" style="display:none">
+  <div class="tg-banner" id="tg-banner">
+    <span>📲 Recibí los avisos de consultas en tu celular</span>
+    <a id="tg-link" href="#" target="_blank" rel="noopener">Vincular Telegram</a>
+  </div>
   <div class="tabs">
     <div class="tab active" onclick="switchTab('consultas')">Consultas activas</div>
     <div class="tab" onclick="switchTab('historial')">Historial</div>
@@ -184,6 +190,10 @@ async function init() {
     return;
   }
   document.getElementById('pharm-badge').textContent = `💊 ${FARMACIA.nombre}`;
+  if (FARMACIA.telegram_link && !FARMACIA.telegram_vinculado) {
+    document.getElementById('tg-link').href = FARMACIA.telegram_link;
+    document.getElementById('tg-banner').style.display = 'flex';
+  }
   document.getElementById('app').style.display = 'block';
   renderQueries();
   startPolling();
