@@ -35,6 +35,16 @@ app.use(express.json());
 const bot = new TelegramBot(process.env.TELEGRAM_TOKEN, { polling: true });
 const supabase = createClient(process.env.SUPABASE_URL, process.env.SUPABASE_KEY);
 
+// Username del bot (se consulta a Telegram al arrancar) para armar links de vinculación
+let BOT_USERNAME = null;
+bot.getMe()
+  .then(me => { BOT_USERNAME = me.username; console.log('Bot de Telegram: @' + BOT_USERNAME); })
+  .catch(e => console.error('No se pudo obtener el username del bot:', e.message));
+
+function telegramLink(farmaciaId) {
+  return BOT_USERNAME ? `https://t.me/${BOT_USERNAME}?start=${farmaciaId}` : null;
+}
+
 // ─── REGISTRO DE FARMACIAS POR TELEGRAM ───────────────────────────────────────
 // Cada farmacia se registra una sola vez con /start en el bot de Telegram.
 // El chatId de Telegram queda guardado y el backend le manda mensajes cuando
@@ -45,6 +55,13 @@ const supabase = createClient(process.env.SUPABASE_URL, process.env.SUPABASE_KEY
 //
 bot.onText(/\/start (.+)/, async (msg, match) => {
   const parts = match[1].split('|');
+
+  // Link de vinculación: t.me/<bot>?start=<id_farmacia> llega como "/start <id>" (sin barras |)
+  if (parts.length === 1) {
+    await vincularTelegram(msg, parts[0].trim());
+    return;
+  }
+
   if (parts.length < 7) {
     bot.sendMessage(msg.chat.id,
       '❌ Formato incorrecto.\nUsá: /start farmaciaId|Nombre|lat|lng|whatsapp|horario|dirección');
@@ -80,9 +97,47 @@ bot.onText(/\/start (.+)/, async (msg, match) => {
 });
 
 // ─── RESPUESTA POR TELEGRAM ────────────────────────────────────────────────────
+// /start sin datos (alguien abrió el bot sin link)
+bot.onText(/^\/start$/, (msg) => {
+  bot.sendMessage(msg.chat.id,
+    '👋 Hola, soy el bot de FarmaYa.\n\n' +
+    'Si sos una farmacia, usá el link de vinculación que te dimos al registrarte (o el botón "Vincular Telegram" de tu panel).\n' +
+    'Si todavía no te registraste: https://farma-ya.com.ar/registro.html');
+});
+
+// Vincula este chat de Telegram a una farmacia ya registrada (por formulario web)
+async function vincularTelegram(msg, farmaciaId) {
+  const { data: f } = await supabase.from('farmacias')
+    .select('id, nombre, chat_id').eq('id', farmaciaId).maybeSingle();
+
+  if (!f) {
+    bot.sendMessage(msg.chat.id, '❌ No encontramos esa farmacia. Revisá que el link esté completo.');
+    return;
+  }
+  if (f.chat_id && f.chat_id !== msg.chat.id) {
+    bot.sendMessage(msg.chat.id,
+      '⚠️ Esta farmacia ya tiene otro Telegram vinculado. Si cambiaste de celular, avisale al equipo de FarmaYa.');
+    return;
+  }
+
+  const { error } = await supabase.from('farmacias').update({ chat_id: msg.chat.id }).eq('id', farmaciaId);
+  if (error) {
+    console.error('Error vinculando Telegram:', error.message);
+    bot.sendMessage(msg.chat.id, '❌ Hubo un error al vincular. Intentá de nuevo en unos minutos.');
+    return;
+  }
+
+  bot.sendMessage(msg.chat.id,
+    `✅ ${f.nombre} quedó vinculada a este Telegram.\n\n` +
+    `Cuando un cliente cerca busque un medicamento, te va a llegar el aviso acá. ` +
+    `(Si tu farmacia todavía está pendiente de aprobación, vas a empezar a recibir avisos cuando la aprueben.)\n\n` +
+    `Panel web: https://farma-ya.com.ar/panel-farmacia.html?id=${f.id}\n\n` +
+    `Para responder: /tengo_[código] o /notengo_[código]`);
+}
+
 bot.onText(/\/tengo_(\w+)/, async (msg, match) => {
   const sessionId = match[1];
-  const farmacia  = await getFarmaciaByChat(msg.chat.id);
+  const farmacia  = await getFarmaciaByChat(msg.chat.id, sessionId);
   if (!farmacia) { bot.sendMessage(msg.chat.id, '❌ Farmacia no registrada.'); return; }
   await registrarRespuesta(sessionId, farmacia, true);
   bot.sendMessage(msg.chat.id, `✅ Confirmado. El cliente ya puede ver que tienen el medicamento y contactarte por WhatsApp.`);
@@ -90,15 +145,22 @@ bot.onText(/\/tengo_(\w+)/, async (msg, match) => {
 
 bot.onText(/\/notengo_(\w+)/, async (msg, match) => {
   const sessionId = match[1];
-  const farmacia  = await getFarmaciaByChat(msg.chat.id);
+  const farmacia  = await getFarmaciaByChat(msg.chat.id, sessionId);
   if (!farmacia) { bot.sendMessage(msg.chat.id, '❌ Farmacia no registrada.'); return; }
   await registrarRespuesta(sessionId, farmacia, false);
   bot.sendMessage(msg.chat.id, `👍 Entendido. El cliente no verá tu farmacia para esta consulta.`);
 });
 
-async function getFarmaciaByChat(chatId) {
-  const { data } = await supabase.from('farmacias').select('*').eq('chat_id', chatId).maybeSingle();
-  return data || null;
+async function getFarmaciaByChat(chatId, sessionId) {
+  const { data: lista } = await supabase.from('farmacias').select('*').eq('chat_id', chatId);
+  if (!lista || lista.length === 0) return null;
+  if (lista.length === 1) return lista[0];
+
+  // Un mismo chat de Telegram puede tener varias farmacias vinculadas:
+  // usamos la que fue notificada por esta consulta.
+  const { data: sess } = await supabase.from('sesiones').select('notificadas').eq('id', sessionId).maybeSingle();
+  const notificadas = (sess && sess.notificadas) || [];
+  return lista.find(f => notificadas.includes(f.id)) || lista[0];
 }
 
 // ─── API: FARMACIA SE AUTO-REGISTRA POR FORMULARIO WEB ───────────────────────
@@ -127,7 +189,7 @@ app.post('/registro', async (req, res) => {
     return res.status(500).json({ error: 'No se pudo registrar la farmacia' });
   }
 
-  res.json({ ok: true, id });
+  res.json({ ok: true, id, telegram_link: telegramLink(id) });
 });
 
 function slugify(text) {
@@ -251,7 +313,9 @@ app.get('/farmacia/:id', async (req, res) => {
     direccion: data.direccion,
     lat: data.lat,
     lng: data.lng,
-    activa: data.activa
+    activa: data.activa,
+    telegram_vinculado: !!data.chat_id,
+    telegram_link: telegramLink(data.id)
   });
 });
 
