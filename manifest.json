@@ -1,0 +1,32 @@
+{
+  "name": "FarmaYa",
+  "short_name": "FarmaYa",
+  "description": "Encontrá tu medicamento en las farmacias cercanas",
+  "start_url": "/cliente.html",
+  "scope": "/",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#F9FAF8",
+  "theme_color": "#2D6A4F",
+  "lang": "es-AR",
+  "icons": [
+    {
+      "src": "/icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "/icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "/icon-maskable-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "maskable"
+    }
+  ]
+}
