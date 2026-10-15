@@ -4,6 +4,11 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>FarmaYa — Encontrá tu medicamento</title>
+<link rel="manifest" href="/manifest.json">
+<link rel="icon" type="image/png" sizes="192x192" href="/icon-192.png">
+<link rel="apple-touch-icon" href="/apple-touch-icon.png">
+<meta name="theme-color" content="#2D6A4F">
+<meta name="apple-mobile-web-app-title" content="FarmaYa">
 <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@300;400;500;600&family=Space+Mono:wght@400;700&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
@@ -180,7 +185,7 @@ header{background:var(--green);padding:14px 20px 12px;display:flex;align-items:c
 <div class="toast" id="toast"></div>
 
 <script>
-const BACKEND_URL = 'http://2.25.206.209:3000';
+const BACKEND_URL = '';
 const SESSION_ID  = Math.random().toString(36).slice(2,10).toUpperCase();
 const TIMEOUT_MS  = 10 * 60 * 1000;
 const MAX_ANTES_BORRAR = 10;
