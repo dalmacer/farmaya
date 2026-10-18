@@ -28,6 +28,8 @@ header{background:var(--green);padding:20px;text-align:center}
 .field input:focus{outline:none;border-color:var(--green-light)}
 .hint{font-size:11px;color:var(--muted);margin-top:4px}
 
+.notice{background:#FFF7ED;border:1px solid #FED7AA;color:#9A3412;padding:12px 14px;border-radius:10px;font-size:12.5px;line-height:1.5;margin-bottom:12px}
+.hint.bad{color:var(--red);font-weight:600}
 .gps-box{background:var(--white);border:1.5px dashed var(--border);border-radius:var(--radius);padding:16px;text-align:center;margin-bottom:18px}
 .gps-status{font-size:13px;color:var(--muted);margin-bottom:10px}
 .gps-status.ok{color:var(--green);font-weight:600}
@@ -46,6 +48,8 @@ header{background:var(--green);padding:20px;text-align:center}
 .success-icon{font-size:48px;margin-bottom:12px}
 .success-box h2{color:var(--green);margin-bottom:10px;font-size:18px}
 .success-box p{color:var(--muted);font-size:14px;line-height:1.6}
+.site-footer{text-align:center;padding:20px 16px 28px;font-size:11.5px;line-height:1.6;color:var(--muted);border-top:1px solid var(--border);margin-top:12px}
+.site-footer strong{color:var(--text);font-weight:600}
 </style>
 </head>
 <body>
@@ -69,14 +73,17 @@ header{background:var(--green);padding:20px;text-align:center}
   </div>
 
   <div class="field">
-    <label>WhatsApp (con código de país, sin espacios)</label>
-    <input type="text" id="whatsapp" placeholder="ej: 5491122334455" />
+    <label>WhatsApp de la farmacia</label>
+    <input type="text" id="whatsapp" inputmode="tel" placeholder="ej: 11 2233-4455" />
+    <div class="hint" id="wa-hint">Escribilo como lo marcarías normalmente: código de área + número, sin 0 ni 15. Nosotros lo dejamos en el formato correcto.</div>
   </div>
 
   <div class="field">
     <label>Horario de atención</label>
     <input type="text" id="horario" placeholder="ej: 8:00-22:00" />
   </div>
+
+  <div class="notice">📍 <b>Completá este formulario estando en la farmacia.</b> Usamos la ubicación de tu dispositivo (no la dirección que escribís) para que los clientes cercanos te encuentren. Si lo hacés desde otro lugar, tu farmacia va a aparecer mal ubicada. Lo ideal es hacerlo desde el celular, con el GPS activado.</div>
 
   <div class="gps-box">
     <div class="gps-status" id="gps-status">📍 Necesitamos tu ubicación para que los clientes te encuentren cerca</div>
@@ -108,6 +115,11 @@ header{background:var(--green);padding:20px;text-align:center}
   </div>
 </div>
 
+<footer class="site-footer">
+  © 2026 <strong>Dalma Cersósimo</strong> - Farmacéutica, docente y desarrolladora web<br>
+  Todos los derechos reservados.
+</footer>
+
 <script>
 const BACKEND_URL = '';
 let userLat = null, userLng = null;
@@ -125,8 +137,14 @@ function usarUbicacion() {
     pos => {
       userLat = pos.coords.latitude;
       userLng = pos.coords.longitude;
-      status.textContent = '✅ Ubicación obtenida correctamente';
-      status.className = 'gps-status ok';
+      const acc = Math.round(pos.coords.accuracy || 0);
+      if (acc > 1000) {
+        status.textContent = `⚠️ Ubicación poco precisa (error de ~${acc} m). Probá desde tu celular, con el GPS activado y estando en la farmacia.`;
+        status.className = 'gps-status';
+      } else {
+        status.textContent = `✅ Ubicación obtenida (precisión ~${acc} m)`;
+        status.className = 'gps-status ok';
+      }
       btn.textContent = 'Actualizar ubicación';
       btn.disabled = false;
       checkFormValid();
@@ -139,10 +157,32 @@ function usarUbicacion() {
   );
 }
 
+// Deja el WhatsApp en formato internacional argentino para celulares: 549 + código de área + número (10 dígitos).
+// Acepta cosas como "11 2233-4455", "011 2233 4455", "+54 11 2233-4455", "541122334455" o "0541122334455".
+// Devuelve '' si no se puede interpretar (por ejemplo si trae el 15).
+function normalizarWhatsapp(raw) {
+  let d = (raw || '').replace(/\D/g, '');
+  d = d.replace(/^0+/, '');
+  if (d.startsWith('54')) d = d.slice(2);
+  if (d.length === 11 && d.startsWith('9')) d = d.slice(1);
+  return d.length === 10 ? '549' + d : '';
+}
+
+function actualizarVistaWhatsapp() {
+  const raw = document.getElementById('whatsapp').value;
+  const hint = document.getElementById('wa-hint');
+  const base = 'Escribilo como lo marcarías normalmente: código de área + número, sin 0 ni 15. Nosotros lo dejamos en el formato correcto.';
+  if (!raw.trim()) { hint.textContent = base; hint.className = 'hint'; return; }
+  const n = normalizarWhatsapp(raw);
+  if (n) { hint.textContent = 'Se guardará como: ' + n; hint.className = 'hint'; }
+  else   { hint.textContent = 'No pudimos interpretar el número. Usá código de área + número, sin 0 ni 15 (ejemplo: 11 2233-4455).'; hint.className = 'hint bad'; }
+}
+
 function checkFormValid() {
   const nombre = document.getElementById('nombre').value.trim();
-  const whatsapp = document.getElementById('whatsapp').value.trim();
+  const whatsapp = normalizarWhatsapp(document.getElementById('whatsapp').value);
   const ok = nombre && whatsapp && userLat !== null && userLng !== null;
+  actualizarVistaWhatsapp();
   document.getElementById('submit-btn').disabled = !ok;
 }
 
@@ -159,11 +199,15 @@ function showError(msg) {
 async function enviarRegistro() {
   const nombre = document.getElementById('nombre').value.trim();
   const direccion = document.getElementById('direccion').value.trim();
-  const whatsapp = document.getElementById('whatsapp').value.trim();
+  const whatsapp = normalizarWhatsapp(document.getElementById('whatsapp').value);
   const horario = document.getElementById('horario').value.trim();
 
-  if (!nombre || !whatsapp || userLat === null || userLng === null) {
-    showError('Completá el nombre, el WhatsApp y tu ubicación antes de enviar.');
+  if (!nombre || userLat === null || userLng === null) {
+    showError('Completá el nombre y tu ubicación antes de enviar.');
+    return;
+  }
+  if (!whatsapp) {
+    showError('Revisá el WhatsApp: escribilo con código de área, sin 0 ni 15 (ejemplo: 11 2233-4455).');
     return;
   }
 
