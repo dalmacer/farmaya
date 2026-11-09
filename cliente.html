@@ -111,6 +111,8 @@ header{background:var(--green);padding:14px 20px 12px;display:flex;align-items:c
 .empty-icon{font-size:40px;margin-bottom:12px}
 .toast{position:fixed;bottom:20px;left:50%;transform:translateX(-50%) translateY(80px);background:var(--green);color:#fff;padding:10px 20px;border-radius:100px;font-size:13px;font-weight:600;transition:transform 0.3s;z-index:9999;white-space:nowrap}
 .toast.show{transform:translateX(-50%) translateY(0)}
+.site-footer{text-align:center;padding:20px 16px 28px;font-size:11.5px;line-height:1.6;color:var(--muted);border-top:1px solid var(--border);margin-top:12px}
+.site-footer strong{color:var(--text);font-weight:600}
 </style>
 </head>
 <body>
@@ -183,6 +185,11 @@ header{background:var(--green);padding:14px 20px 12px;display:flex;align-items:c
 </div>
 
 <div class="toast" id="toast"></div>
+
+<footer class="site-footer">
+  © 2026 <strong>Dalma Cersósimo</strong> - Farmacéutica, docente y desarrolladora web<br>
+  Todos los derechos reservados.
+</footer>
 
 <script>
 const BACKEND_URL = '';
